@@ -23,7 +23,8 @@ Four layers inside `src/llm_eval_harness/`, dependencies pointing inward only:
   parsing. Process creation lives in one module (`process.py`) and raw sockets in one (`providers/http.py`).
 - `composition`: wiring and the command line. The only layer that reads the environment.
 
-The rule is **enforced mechanically**: `tests/architecture/test_layers.py` parses every source file with `ast` and
+The rule is **checked mechanically** (a lint: it stops honest mistakes and the obvious evasions, and SECURITY.md says
+what it cannot see): `tests/architecture/test_layers.py` parses every source file with `ast` and
 fails on a forbidden import (by layer, and by module allow-list for the pure layers), on `eval`/`exec`/
 `compile`/`__import__`, on `shell=` other than the literal `False`, on `os.system`/`os.popen`, on wildcard
 imports, on environment access outside composition, on third-party imports, and on `subprocess` or network modules
