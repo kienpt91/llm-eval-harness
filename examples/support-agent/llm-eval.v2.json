@@ -1,0 +1,13 @@
+{
+  "dataset": "datasets/support.jsonl",
+  "provider": { "type": "command", "argv": ["python3", "pipeline.py", "--version", "v2"], "env_allow": [] },
+  "price_table": "prices.json",
+  "baseline": "baseline.json",
+  "out_dir": "out-v2",
+  "defaults": { "repeat": 1, "concurrency": 4, "timeout_s": 20, "retries": 1 },
+  "graders": [
+    { "type": "cost_budget", "max_usd": 0.0005, "name": "cost" },
+    { "type": "latency_budget", "max_ms": 5000, "name": "latency" }
+  ],
+  "gate": { "deterministic": true }
+}

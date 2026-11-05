@@ -1,0 +1,6 @@
+{
+  "currency": "USD",
+  "models": {
+    "support-lm-small": { "input_per_mtok": 0.15, "output_per_mtok": 0.6 }
+  }
+}
