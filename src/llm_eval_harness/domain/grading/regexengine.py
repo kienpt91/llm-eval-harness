@@ -58,8 +58,30 @@ class _CharClass:
 
 
 @dataclass(slots=True)
+class Meter:
+    """Filled in by a match call: the steps it used, also when it ran out of budget.
+
+    The step count is deterministic (it depends only on the pattern and the text), so tests can check the work a
+    pattern costs without looking at a clock.
+    """
+
+    steps: int = 0
+
+
+@dataclass(slots=True)
 class _Budget:
-    left: int = MAX_REGEX_STEPS
+    limit: int
+    left: int
+
+
+def _begin(max_steps: int | None) -> _Budget:
+    limit = MAX_REGEX_STEPS if max_steps is None else max_steps  # read at call time: tests may lower the budget
+    return _Budget(limit, limit)
+
+
+def _end(budget: _Budget, meter: Meter | None) -> None:
+    if meter is not None:
+        meter.steps = budget.limit - budget.left
 
 
 # --- parsing ---------------------------------------------------------------------------------------------------
@@ -484,35 +506,64 @@ class Program:
             current = following
 
     # -- public API --
+    # Every call has a step budget (``MAX_REGEX_STEPS``, or ``max_steps``: for tests) and may fill a ``Meter``.
 
-    def matches(self, text: str) -> bool:
+    def matches(self, text: str, *, max_steps: int | None = None, meter: Meter | None = None) -> bool:
         """Whether the pattern matches anywhere in ``text``."""
-        return self._scan(text, 0, _Budget(), full=False, first_only=True) is not None
+        budget = _begin(max_steps)
+        try:
+            return self._scan(text, 0, budget, full=False, first_only=True) is not None
+        finally:
+            _end(budget, meter)
 
-    def fullmatch(self, text: str) -> bool:
+    def fullmatch(self, text: str, *, max_steps: int | None = None, meter: Meter | None = None) -> bool:
         """Whether the pattern matches the whole of ``text``."""
-        return self._scan(text, 0, _Budget(), full=True, first_only=True) is not None
+        budget = _begin(max_steps)
+        try:
+            return self._scan(text, 0, budget, full=True, first_only=True) is not None
+        finally:
+            _end(budget, meter)
 
-    def first_span(self, text: str) -> tuple[int, int] | None:
+    def first_span(
+        self, text: str, *, max_steps: int | None = None, meter: Meter | None = None
+    ) -> tuple[int, int] | None:
         """The leftmost-first match, as ``re.search(...).span()`` would give it."""
-        return self._scan(text, 0, _Budget(), full=False, first_only=False)
+        budget = _begin(max_steps)
+        try:
+            return self._scan(text, 0, budget, full=False, first_only=False)
+        finally:
+            _end(budget, meter)
 
-    def spans(self, text: str) -> list[tuple[int, int]]:
+    def spans(self, text: str, *, max_steps: int | None = None, meter: Meter | None = None) -> list[tuple[int, int]]:
         """Non-overlapping, non-empty matches from left to right, with one step budget for the whole call."""
-        budget = _Budget()
+        budget = _begin(max_steps)
         found: list[tuple[int, int]] = []
-        position = 0
-        while position <= len(text):
-            match = self._scan(text, position, budget, full=False, first_only=False)
-            if match is None:
-                break
-            start, end = match
-            if end > start:
-                found.append(match)
-                position = end
-            else:
-                position = start + 1
-        return found
+        try:
+            position = 0
+            while position <= len(text):
+                match = self._scan(text, position, budget, full=False, first_only=False)
+                if match is None:
+                    break
+                start, end = match
+                if end > start:
+                    found.append(match)
+                    position = end
+                else:
+                    position = start + 1
+            return found
+        finally:
+            _end(budget, meter)
+
+    def step_bound(self, text_length: int) -> int:
+        """The most steps ``matches``, ``fullmatch`` or ``first_span`` can use on a text of this length.
+
+        One scan advances every thread once per position, and a thread is a program counter that is visited at most
+        once per position, so a scan costs at most one step per instruction per position plus one of bookkeeping:
+        linear in the text for every pattern. ``spans`` scans again after each match (a higher-priority thread can
+        keep a scan going to the end of the text), so it is not covered by this bound; its shared step budget is what
+        bounds it.
+        """
+        return (text_length + 1) * (len(self.insts) + 1)
 
 
 def compile_pattern(pattern: str, flags: tuple[str, ...] = ()) -> Program:

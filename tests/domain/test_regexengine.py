@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
-from llm_eval_harness.domain.grading.regexengine import BudgetExceeded, RegexError, compile_pattern
+from llm_eval_harness.domain.grading.regexengine import BudgetExceeded, Meter, RegexError, compile_pattern
 from llm_eval_harness.domain.limits import MAX_REGEX_STEPS
 from support.prng import Prng
 
@@ -165,30 +164,33 @@ def test_spans_replace_like_re_finditer_for_simple_patterns() -> None:
 
 
 def test_work_is_linear_not_exponential() -> None:
-    started = time.monotonic()
     for pattern, text in [
-        (r"(a+)+$", "a" * 30_000 + "!"),
+        (r"(a+)+$", "a" * 2_000 + "!"),
         (r"(a?){30}a{30}", "a" * 30),
-        (r"(.*)*x", "y" * 20_000),
-        (r".*a.*b.*c", "ab" * 10_000),
+        (r"(.*)*x", "y" * 1_500),
+        (r".*a.*b.*c", "ab" * 800),
     ]:
-        compile_pattern(pattern).matches(text)
-    assert time.monotonic() - started < 40
+        program = compile_pattern(pattern)
+        meter = Meter()
+        program.matches(text, meter=meter)
+        assert meter.steps <= program.step_bound(len(text)), (pattern, meter.steps)
 
 
 def test_the_step_budget_is_a_hard_bound() -> None:
     program = compile_pattern("(" + "|".join("abcd"[i % 4] for i in range(30)) + "){1,20}z")
-    started = time.monotonic()
+    meter = Meter()
     with pytest.raises(BudgetExceeded):
-        program.matches("abcd" * 8000)
-    assert time.monotonic() - started < 60
-    assert MAX_REGEX_STEPS == 2_000_000
+        program.matches("abcd" * 8000, max_steps=10_000, meter=meter)
+    assert 10_000 < meter.steps <= 10_000 + len(program.insts) + 1
+    assert MAX_REGEX_STEPS == 2_000_000  # the production budget
 
 
 def test_the_budget_is_per_call_and_a_fresh_call_starts_fresh() -> None:
     program = compile_pattern("a")
-    for _ in range(30):
-        assert program.matches("b" * 30_000 + "a")
+    meter = Meter()
+    for _ in range(5):
+        assert program.matches("b" * 5_000 + "a", meter=meter)
+        assert meter.steps <= program.step_bound(5_001)  # each call is metered from zero, not from the last one
 
 
 def test_unicode_classes_and_case_insensitivity() -> None:
