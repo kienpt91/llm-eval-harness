@@ -35,3 +35,7 @@ service-account*.json
 /secrets.toml
 *.tfstate
 *.tfstate.*
+
+# demo and example outputs
+examples/**/out/
+examples/**/out-*/

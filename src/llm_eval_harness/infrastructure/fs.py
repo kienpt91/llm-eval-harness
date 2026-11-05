@@ -104,3 +104,12 @@ class ProjectFilesystem:
         except OSError as error:
             raise UsageError(f"{path}: cannot be written ({error.strerror or type(error).__name__})") from None
         return str(target.relative_to(self.root))
+
+
+def exists(fs: ProjectFilesystem, path: str) -> bool:
+    """Whether a project file is there (never raises; a path outside the project counts as absent)."""
+    try:
+        fs.resolve_existing(path)
+    except UsageError:
+        return False
+    return True
