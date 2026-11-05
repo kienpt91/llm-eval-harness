@@ -248,7 +248,7 @@ def test_the_container_image_is_pinned_by_digest() -> None:
     text = (ROOT / "scripts/py.sh").read_text()
     digests = re.findall(r"default_image=python@sha256:[0-9a-f]{64}", text)
     assert len(digests) == 2
-    assert "--cap-drop ALL" in text and "--network" in text and "--cpus 4" in text and "--memory 6g" in text
+    assert "--cap-drop ALL" in text and "--network" in text and "--cpus ${PY_CPUS:-4}" in text and "--memory 6g" in text
     assert "no-new-privileges" in text and "--read-only" in text and '-v "$here:/work:$mode"' in text
 
 

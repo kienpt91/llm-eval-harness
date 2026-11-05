@@ -8,6 +8,7 @@
 #        scripts/py.sh <shell command>    run a command with the venv on PATH, no network
 #   PY_VERSION=3.13 (default) or 3.12
 #   PY_RW=1          mount the source read-write (only for `ruff format` and `ruff check --fix`)
+#   PY_CPUS=2        CPU limit of the container (default 4); the CI runners have 2
 #   PY_NET=bridge    allow the network for one command (only scripts/lock-dev.py and scripts/check-dep-age.py need it)
 #
 # Images are the official `python` slim-trixie images, pinned by the digest of the multi-arch index.
@@ -43,7 +44,7 @@ fi
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \
   --cap-drop ALL --security-opt no-new-privileges \
-  --cpus 4 --memory 6g --pids-limit 1024 \
+  --cpus ${PY_CPUS:-4} --memory 6g --pids-limit 1024 \
   --network "$net" \
   --read-only --tmpfs /tmp:rw,exec,size=1g \
   -e HOME=/tmp/home -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUNBUFFERED=1 \
