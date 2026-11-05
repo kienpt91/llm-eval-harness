@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 
@@ -228,10 +228,14 @@ def find_pii(text: str, kinds: Iterable[str] | None = None) -> list[Finding]:
     return sorted(found, key=lambda f: (f.start, f.kind))
 
 
-def redact(text: str, extra_patterns: Iterable[re.Pattern[str]] = ()) -> str:
-    """Replace every secret-shaped string (and every match of the extra patterns) with a marker naming its kind."""
+def redact(text: str, extra_spans: Iterable[Callable[[str], list[tuple[int, int]]]] = ()) -> str:
+    """Replace every secret-shaped string, and every span the extra finders return, with a marker naming its kind.
+
+    An extra finder takes the text and returns ``(start, end)`` spans; it may raise (the caller decides what failing
+    closed means).
+    """
     spans = [(f.start, f.end, f.kind) for f in find_secrets(text)]
-    spans.extend((m.start(), m.end(), "custom") for pattern in extra_patterns for m in pattern.finditer(text))
+    spans.extend((start, end, "custom") for finder in extra_spans for start, end in finder(text))
     if not spans:
         return text
     spans.sort()

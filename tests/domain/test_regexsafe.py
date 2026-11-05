@@ -1,25 +1,17 @@
-from __future__ import annotations
+"""The regular expression front door: loading, caching, the input cap, the flags."""
 
-import re
-import time
+from __future__ import annotations
 
 import pytest
 
-from llm_eval_harness.domain.grading.regexsafe import check_pattern, compile_flags
-
-
-@pytest.mark.parametrize(
-    "pattern",
-    [r"(a+)+$", r"(a*)*b", r"(.*)*", r"(a|aa)+", r"(x+x+)+y", r"(?:ab*)+", r"(\w+\s?)*$", r"((a+)b)+", r"(a{2,})+"],
+from llm_eval_harness.domain.grading.regexsafe import (
+    check_pattern,
+    compiled,
+    pattern_matches,
+    refusal_detail,
+    too_long_for_regex,
 )
-def test_catastrophic_shapes_are_refused(pattern: str) -> None:
-    reason = check_pattern(pattern)
-    assert reason is not None and "backtracking" in reason
-
-
-@pytest.mark.parametrize("pattern", [r"(a)\1", r"(?P<x>a)(?P=x)", r"(?=a)b", r"(?!a)b", r"(?<=a)b", r"(?<!a)b"])
-def test_backreferences_and_lookaround_are_refused(pattern: str) -> None:
-    assert check_pattern(pattern) is not None
+from llm_eval_harness.domain.limits import MAX_REGEX_INPUT_CHARS, MAX_REGEX_LENGTH
 
 
 @pytest.mark.parametrize(
@@ -31,46 +23,42 @@ def test_backreferences_and_lookaround_are_refused(pattern: str) -> None:
         r"[a-z]+@[a-z]+\.com",
         r"colou?r",
         r"\(a+\)+",
-        r"[(a+)+]",
-        r"a+b*c?",
-        r"(?i)hello",
+        r"(a+)+$",
         r"x{2,5}",
     ],
 )
-def test_ordinary_patterns_are_accepted(pattern: str) -> None:
+def test_ordinary_and_formerly_dangerous_patterns_are_accepted(pattern: str) -> None:
     assert check_pattern(pattern) is None
 
 
-def test_invalid_empty_and_long_patterns() -> None:
-    assert "valid regular expression" in (check_pattern("(") or "")
-    assert check_pattern("") == "must not be empty"
-    assert "too long" in (check_pattern("a" * 513) or "")
+@pytest.mark.parametrize(
+    ("pattern", "fragment"),
+    [
+        ("", "must not be empty"),
+        ("(", "missing closing parenthesis"),
+        ("a" * (MAX_REGEX_LENGTH + 1), "too long"),
+        (r"(a)\1", "back-references"),
+    ],
+)
+def test_refusals_say_why(pattern: str, fragment: str) -> None:
+    assert fragment in (check_pattern(pattern) or "")
 
 
-def test_character_class_edge_cases_do_not_confuse_the_screen() -> None:
-    assert check_pattern(r"[]a+]+") is None
-    assert check_pattern(r"[^]a]+x") is None
-    assert check_pattern(r"[\]a]+") is None
+def test_the_reason_includes_the_position() -> None:
+    assert "(at position " in (check_pattern("abc*?*") or "")
+
+
+def test_unknown_flags_are_refused() -> None:
+    assert "unknown flag" in (check_pattern("a", ("x",)) or "")
+
+
+def test_compiled_patterns_are_cached_and_flag_sensitive() -> None:
+    assert compiled("abc") is compiled("abc")
+    assert compiled("abc", ("i",)) is not compiled("abc")
+    assert pattern_matches("abc", ("i",), "xABCx") and not pattern_matches("abc", (), "xABCx")
 
 
 def test_long_text_is_refused_instead_of_scanned() -> None:
-    from llm_eval_harness.domain.grading.regexsafe import too_long_for_regex
-    from llm_eval_harness.domain.limits import MAX_REGEX_INPUT_CHARS
-
     assert not too_long_for_regex("a" * MAX_REGEX_INPUT_CHARS)
     assert too_long_for_regex("a" * (MAX_REGEX_INPUT_CHARS + 1))
-
-
-def test_accepted_quadratic_pattern_is_bounded_by_the_input_cap() -> None:
-    from llm_eval_harness.domain.limits import MAX_REGEX_INPUT_CHARS
-
-    hostile = "a" * MAX_REGEX_INPUT_CHARS
-    started = time.monotonic()
-    assert check_pattern(r"a+b") is None
-    re.search(r"a+b", hostile)
-    assert time.monotonic() - started < 10
-
-
-def test_compile_flags() -> None:
-    assert compile_flags(("i", "m")) == re.IGNORECASE | re.MULTILINE
-    assert compile_flags(()) == 0
+    assert str(MAX_REGEX_INPUT_CHARS) in refusal_detail("answer")

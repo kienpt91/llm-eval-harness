@@ -122,8 +122,8 @@ def test_hash_is_stable_across_runs_and_key_order() -> None:
         ),
         ({"id": "a", "input": "x", "expected": {"fact": ["a"]}}, "line 1.expected.fact: unknown key"),
         (
-            {"id": "a", "input": "x", "expected": {"forbidden_patterns": ["(a+)+"]}},
-            "line 1.expected.forbidden_patterns[0]: repeats a group",
+            {"id": "a", "input": "x", "expected": {"forbidden_patterns": ["(a)\\1"]}},
+            "line 1.expected.forbidden_patterns[0]: back-references are not supported",
         ),
         (
             {"id": "a", "input": "x", "expected": {"tool_calls": [{"args": {}}]}},
@@ -182,7 +182,7 @@ def test_hash_is_stable_across_runs_and_key_order() -> None:
         ),
         (
             {"id": "a", "input": "x", "graders": [{"type": "regex", "pattern": "("}]},
-            "line 1.graders[0].pattern: is not a valid regular expression",
+            "line 1.graders[0].pattern: missing closing parenthesis",
         ),
         (
             {"id": "a", "input": "x", "metadata": 5, "expected": {"facts": ["a"]}},

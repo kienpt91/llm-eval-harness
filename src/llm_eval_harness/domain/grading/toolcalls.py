@@ -6,13 +6,12 @@ address from a poisoned document. These graders read the tool calls the provider
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from llm_eval_harness.domain.errors import Problem
 from llm_eval_harness.domain.grading.params import Params
-from llm_eval_harness.domain.grading.regexsafe import check_pattern, too_long_for_regex
+from llm_eval_harness.domain.grading.regexsafe import BudgetExceeded, check_pattern, pattern_matches, too_long_for_regex
 from llm_eval_harness.domain.jsonio import JsonValue, contains_json, json_equal, kind_of
 from llm_eval_harness.domain.model import GradeContext, Outcome, ToolCall, ToolCallExpectation
 from llm_eval_harness.domain.text import one_line
@@ -87,8 +86,12 @@ def satisfies(actual: JsonValue, present: bool, constraint: JsonValue) -> str | 
         pattern = constraint["regex"]
         if isinstance(actual, str) and too_long_for_regex(actual):
             return "value is too long to test against a pattern"
-        ok = isinstance(actual, str) and isinstance(pattern, str) and re.search(pattern, actual) is not None
-        return None if ok else "value does not match the required pattern"
+        if not isinstance(actual, str) or not isinstance(pattern, str):
+            return "value does not match the required pattern"
+        try:
+            return None if pattern_matches(pattern, (), actual) else "value does not match the required pattern"
+        except BudgetExceeded:
+            return "pattern used up its work budget on this value (failing closed)"
     if "contains" in constraint:
         needle = constraint["contains"]
         ok = isinstance(actual, str) and isinstance(needle, str) and needle in actual

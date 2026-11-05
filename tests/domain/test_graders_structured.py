@@ -100,7 +100,7 @@ def test_schema_itself_is_validated_with_paths() -> None:
     assert problems({"properties": {"a": {"minLength": -1}}}) == [
         "s.properties.a.minLength: must be at least 0 (got -1)"
     ]
-    assert problems({"pattern": "(a+)+"})[0].startswith("s.pattern: repeats a group")
+    assert problems({"pattern": "(a)\\1"})[0].startswith("s.pattern: back-references are not supported")
     assert problems({"anyOf": []}) == ["s.anyOf: needs between 1 and 8 schemas"]
     assert problems({"additionalProperties": {}}) == ["s.additionalProperties: must be true or false"]
     assert problems(5) == ["s: schema must be an object or a boolean (got number)"]

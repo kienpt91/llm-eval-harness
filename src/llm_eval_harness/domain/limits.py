@@ -26,8 +26,10 @@ MAX_MESSAGE_CHARS = 2000
 STORED_OUTPUT_CHARS = 20_000
 """Longest model output stored in a report; the grading itself always sees the whole output."""
 MAX_REGEX_INPUT_CHARS = 32 * 1024
-"""Longest text a user-supplied regular expression is run on. Python's ``re`` cannot be interrupted, and even a
-screened pattern can be quadratic on adversarial text, so longer text FAILS the grader instead of being scanned."""
+"""Longest text a user-supplied regular expression is run on; longer text FAILS the grader instead of being scanned."""
+MAX_REGEX_STEPS = 2_000_000
+"""Work budget of one call of the pattern engine (one step is one thread advanced over one character). Spent budget
+fails the grader closed; ordinary patterns on ordinary text use a few percent of it."""
 MAX_REDACT_CHARS = 32 * 1024
 """Longest string the redactor looks at. Anything beyond is not stored: it is replaced by a count. Stored output is
 cut at ``STORED_OUTPUT_CHARS`` anyway, and every pattern that runs on it therefore works on bounded text."""

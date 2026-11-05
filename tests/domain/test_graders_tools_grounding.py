@@ -149,7 +149,9 @@ def test_tool_call_parameter_validation() -> None:
         "one_of: must be a non-empty array" in line
         for line in render({"calls": [{"name": "a", "args": {"x": {"one_of": []}}}]})
     )
-    assert any("catastrophic" in line for line in render({"calls": [{"name": "a", "args": {"x": {"regex": "(a+)+"}}}]}))
+    assert any(
+        "back-references" in line for line in render({"calls": [{"name": "a", "args": {"x": {"regex": "(a)\\1"}}}]})
+    )
     assert any(
         "present: must be true" in line
         for line in render({"calls": [{"name": "a", "args": {"x": {"present": False}}}]})

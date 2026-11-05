@@ -8,16 +8,17 @@ when wording varies.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from llm_eval_harness.domain.errors import Problem
 from llm_eval_harness.domain.grading.params import Params
 from llm_eval_harness.domain.grading.regexsafe import (
-    FLAGS,
+    BUDGET_DETAIL,
+    FLAG_NAMES,
+    BudgetExceeded,
     check_pattern,
-    compile_flags,
+    pattern_matches,
     refusal_detail,
     too_long_for_regex,
 )
@@ -141,17 +142,19 @@ def parse_not_contains(raw: Mapping[str, JsonValue], path: str, problems: list[P
 def _flags(p: Params) -> tuple[str, ...]:
     flags = p.strings("flags")
     for index, flag in enumerate(flags):
-        if flag not in FLAGS:
+        if flag not in FLAG_NAMES:
             p.fail(f"flags[{index}]", f"unknown flag {flag!r} (allowed: i, m, s)")
-    return tuple(f for f in flags if f in FLAGS)
+    return tuple(f for f in flags if f in FLAG_NAMES)
 
 
 def grade_not_contains(config: NotContainsConfig, ctx: GradeContext) -> Outcome:
     """Passes when none of the forbidden strings or patterns appears anywhere in the answer.
 
     Strings are matched after folding case, width and invisible characters (so a zero-width space inside the
-    word does not hide it). Patterns run on the raw text with the given flags, and only on answers up to
-    32768 characters: a longer answer fails the grader. The detail never repeats the matched text. Failure modes: it cannot see paraphrases, translations, spelled-out or encoded content, and
+    word does not hide it). Patterns run on the raw text with the given flags (case-insensitively unless
+    ``case_sensitive``) through the bounded pattern engine (see docs/graders.md for the supported syntax), and only
+    on answers up to 32768 characters: a longer answer fails the grader, and so does a pattern that uses up its
+    work budget. The detail never repeats the matched text. Failure modes: it cannot see paraphrases, translations, spelled-out or encoded content, and
     it fires on a refusal that quotes the forbidden string; a safety case should pair it with a canary string
     that never appears in legitimate output.
     """
@@ -161,12 +164,15 @@ def grade_not_contains(config: NotContainsConfig, ctx: GradeContext) -> Outcome:
     for index, value in enumerate(config.values):
         if _haystack(value, config.case_sensitive) in hay:
             hits.append(f"forbidden string #{index + 1}")
-    flags = compile_flags(config.flags) | (0 if config.case_sensitive else re.IGNORECASE)
+    flags = config.flags if config.case_sensitive or "i" in config.flags else (*config.flags, "i")
     if config.patterns and too_long_for_regex(text):
         return Outcome(False, 0.0, refusal_detail("answer"))
-    for index, pattern in enumerate(config.patterns):
-        if re.search(pattern, text, flags):
-            hits.append(f"forbidden pattern #{index + 1}")
+    try:
+        for index, pattern in enumerate(config.patterns):
+            if pattern_matches(pattern, flags, text):
+                hits.append(f"forbidden pattern #{index + 1}")
+    except BudgetExceeded:
+        return Outcome(False, 0.0, BUDGET_DETAIL)
     if hits:
         return Outcome(False, 0.0, f"forbidden content present: {', '.join(hits)}")
     return Outcome(True, 1.0, "no forbidden content")
@@ -195,15 +201,17 @@ def parse_regex(raw: Mapping[str, JsonValue], path: str, problems: list[Problem]
 def grade_regex(config: RegexConfig, ctx: GradeContext) -> Outcome:
     """Passes when the pattern is found in the answer (or, with ``must_match`` false, is absent).
 
-    ``full`` requires the whole answer to match. Failure modes: patterns are screened against catastrophic
-    backtracking, so some valid expressions are refused; ``.`` does not cross newlines unless flag ``s`` is
-    given; anchors apply to the whole answer unless flag ``m`` is given.
+    ``full`` requires the whole answer to match. Patterns run on a bounded, linear-time engine with a restricted
+    syntax (no back-references or look-around: refused when the dataset loads). Failure modes: ``.`` does not cross
+    newlines unless flag ``s`` is given; anchors apply to the whole answer unless flag ``m`` is given; answers over
+    32768 characters and patterns that use up their work budget FAIL the grader (also with ``must_match: false``).
     """
     if too_long_for_regex(ctx.output.text):
         return Outcome(False, 0.0, refusal_detail("answer"))
-    flags = compile_flags(config.flags)
-    matcher = re.fullmatch if config.full else re.search
-    found = matcher(config.pattern, ctx.output.text, flags) is not None
+    try:
+        found = pattern_matches(config.pattern, config.flags, ctx.output.text, full=config.full)
+    except BudgetExceeded:
+        return Outcome(False, 0.0, BUDGET_DETAIL)  # could not decide: never "absent" and never "present"
     ok = found == config.must_match
     if config.must_match:
         return Outcome(ok, 1.0 if ok else 0.0, "pattern matches" if ok else "pattern does not match")

@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from llm_eval_harness.domain.grading.regexsafe import compiled
 from llm_eval_harness.domain.shapes import (
     PII_KINDS,
     SECRET_KINDS,
@@ -81,12 +82,10 @@ def test_redact_replaces_with_kind_marker_and_never_keeps_the_secret() -> None:
 
 
 def test_redact_handles_overlapping_matches_and_custom_patterns() -> None:
-    import re
-
     text = f"{keys.quoted_assignment()} then {keys.sk_style_key()}"
     out = redact(text)
     assert "REDACTED" in out and keys.sk_style_key() not in out
-    out2 = redact("order ORD-12345 here", [re.compile(r"ORD-\d+")])
+    out2 = redact("order ORD-12345 here", [compiled(r"ORD-\d+").spans])
     assert out2 == "order [REDACTED:custom] here"
     nested = keys.url_with_password()
     assert nested not in redact(f"db={nested}&k={keys.bearer()}")

@@ -70,7 +70,7 @@ def test_parameter_validation_names_the_exact_path() -> None:
         "exact": ({}, "exact.answers: is required"),
         "contains": ({"values": []}, "needs at least 1 item(s)"),
         "not_contains": ({}, "needs at least one of values or patterns"),
-        "regex": ({"pattern": "(a+)+"}, "regex.pattern: repeats a group"),
+        "regex": ({"pattern": "(a)\\1"}, "regex.pattern: back-references are not supported"),
         "regex ": ({"pattern": "a", "flags": ["z"]}, "regex.flags[0]: unknown flag 'z'"),
         "refusal": ({"phrases": "no"}, "refusal.phrases: must be an array of strings (got string)"),
     }
@@ -80,7 +80,7 @@ def test_parameter_validation_names_the_exact_path() -> None:
 
 
 def test_not_contains_pattern_is_screened() -> None:
-    found = validate("not_contains", {"patterns": ["(a|b)*c"]}, "g")
+    found = validate("not_contains", {"patterns": ["(a)\\1"]}, "g")
     assert found and found[0].location == "g.patterns[0]"
 
 

@@ -143,7 +143,7 @@ def test_http_and_fake_providers() -> None:
         ({"defaults": {"timeout_s": 0}}, "defaults.timeout_s: must be at least 0.1"),
         ({"defaults": {"retries": 99}}, "defaults.retries: must be at most 10"),
         ({"graders": [{"type": "nope"}]}, "graders[0].type: unknown grader 'nope'"),
-        ({"redact": {"patterns": ["(a+)+"]}}, "redact.patterns[0]: repeats a group"),
+        ({"redact": {"patterns": ["(a)\\1"]}}, "redact.patterns[0]: back-references are not supported"),
         ({"gate": {"on_inconclusive": "maybe"}}, "gate.on_inconclusive: must be one of fail, pass"),
         ({"gate": {"min_pass_rate": 2}}, "gate.min_pass_rate: must be at most 1.0"),
         ({"gate": {"alpha": 0}}, "gate.alpha: must be at least"),
@@ -269,8 +269,8 @@ def test_redactor_json_and_bounds() -> None:
         deep = [deep]
     assert "[TRUNCATED]" in json.dumps(r.json(js(deep)))
     assert Redactor(False).json({"a": token}) == {"a": token} and Redactor(False).text(token) == token
-    with pytest.raises(UsageError, match="catastrophic"):
-        Redactor.build(True, ["(a+)+"])
+    with pytest.raises(UsageError, match="back-references"):
+        Redactor.build(True, ["(a)\\1"])
     assert bounded_json({"a": "b"}, 100) == {"a": "b"}
     assert "_truncated" in bounded_json({"a": "b" * 500}, 100)
 

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from llm_eval_harness.domain.errors import Problem
 from llm_eval_harness.domain.grading.params import Params
-from llm_eval_harness.domain.grading.regexsafe import check_pattern, refusal_detail, too_long_for_regex
+from llm_eval_harness.domain.grading.regexsafe import (
+    BUDGET_DETAIL,
+    BudgetExceeded,
+    check_pattern,
+    pattern_matches,
+    refusal_detail,
+    too_long_for_regex,
+)
 from llm_eval_harness.domain.jsonio import JsonParseError, JsonValue, contains_json, json_equal, kind_of, parse_json
 from llm_eval_harness.domain.model import GradeContext, Outcome
 from llm_eval_harness.domain.text import one_line
@@ -143,8 +149,12 @@ def _check_string(value: str, schema: Mapping[str, JsonValue], bad: Callable[[st
     if isinstance(pattern, str):
         if too_long_for_regex(value):
             bad(refusal_detail("string"))
-        elif re.search(pattern, value) is None:
-            bad("string does not match the required pattern")
+        else:
+            try:
+                if not pattern_matches(pattern, (), value):
+                    bad("string does not match the required pattern")
+            except BudgetExceeded:
+                bad(BUDGET_DETAIL)
 
 
 def _check_array(
