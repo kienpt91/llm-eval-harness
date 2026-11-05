@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      PY_VERSION: ${{ matrix.python }}
+    steps:
+      # Actions are pinned to full commit SHAs (checkout v7.0.1). Python comes from the official image pinned by
+      # digest inside scripts/py.sh, the same container the project is developed in.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned, hash-checked development tools
+        run: sh scripts/py.sh install
+      # format check, lint, strict type check, the whole suite under coverage with the layer thresholds
+      # (domain 95, application 90, overall 85)
+      - name: Verify
+        run: sh scripts/verify.sh
+
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every pinned file is at least seven days old and the lock matches its input
+        run: PY_NET=bridge sh scripts/py.sh 'python scripts/check-dep-age.py'
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh scripts/py.sh install
+      - name: Build the sdist and the wheel
+        run: sh scripts/build-dist.sh
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh scripts/secret-scan.sh --tree
+      - run: sh scripts/secret-scan.sh --history
+
+  release-scripts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh scripts/test-release.sh

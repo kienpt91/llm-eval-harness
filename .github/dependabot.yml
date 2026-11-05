@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    # a release must be at least seven days old before an update is proposed
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    # requirements-dev.in is the input, requirements-dev.txt the hashed lock: after merging an update, run
+    # scripts/lock-dev.py (see RELEASING.md); CI fails while the two disagree
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
