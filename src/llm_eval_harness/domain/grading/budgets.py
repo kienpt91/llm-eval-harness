@@ -66,7 +66,9 @@ class TokenConfig:
 
 def parse_token_budget(raw: Mapping[str, JsonValue], path: str, problems: list[Problem]) -> TokenConfig:
     p = Params(raw, path, problems, {"max_total"})
-    return TokenConfig(int(p.number("max_total", required=True, minimum=0, integer=True) or 0))
+    if "max_total" not in raw:
+        p.fail("max_total", "is required")
+    return TokenConfig(p.integer("max_total", default=0, minimum=0))
 
 
 def grade_token_budget(config: TokenConfig, ctx: GradeContext) -> Outcome:

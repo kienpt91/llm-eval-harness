@@ -26,7 +26,7 @@ class GroundingConfig:
 def parse_grounding(raw: Mapping[str, JsonValue], path: str, problems: list[Problem]) -> GroundingConfig:
     p = Params(raw, path, problems, {"min_citations", "must_cite", "allow_retrieved", "text_markers"})
     return GroundingConfig(
-        int(p.number("min_citations", default=1, minimum=0, integer=True) or 0),
+        p.integer("min_citations", default=1, minimum=0),
         p.strings("must_cite", max_len=128),
         p.boolean("allow_retrieved", default=True),
         p.boolean("text_markers", default=False),

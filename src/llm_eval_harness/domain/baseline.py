@@ -89,7 +89,7 @@ def baseline_json(doc: ReportDoc) -> dict[str, JsonValue]:
 
 def baseline_text(doc: ReportDoc) -> str:
     """The baseline file content: sorted keys, two-space indent, trailing newline."""
-    return json.dumps(baseline_json(doc), indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
+    return json.dumps(baseline_json(doc), indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + "\n"
 
 
 def parse_baseline(value: JsonValue, source: str) -> Snapshot:

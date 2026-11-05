@@ -112,6 +112,11 @@ class Params:
             return default
         return float(value)
 
+    def integer(self, key: str, *, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+        """A whole number in range; ``default`` when absent or invalid (the problem is recorded)."""
+        value = self.number(key, default=float(default), minimum=minimum, maximum=maximum, integer=True)
+        return default if value is None else int(value)
+
     def boolean(self, key: str, *, default: bool) -> bool:
         value = self._get(key, False)
         if key not in self.raw:
