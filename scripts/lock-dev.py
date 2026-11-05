@@ -9,22 +9,25 @@ when a pin has no usable wheel for one of those targets, is yanked, or has a kep
 (the dependency age policy: at least seven days old). Hashes are the ones PyPI publishes; pip verifies them with
 --require-hashes.
 """
+
 from __future__ import annotations
 
 import json
 import re
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 TARGETS = [("cp312", "x86_64"), ("cp312", "aarch64"), ("cp313", "x86_64"), ("cp313", "aarch64")]
-WHEEL = re.compile(r"^(?P<name>[^-]+)-(?P<ver>[^-]+)(-(?P<build>\d[^-]*))?-(?P<py>[^-]+)-(?P<abi>[^-]+)-(?P<plat>[^-]+)\.whl$")
+WHEEL = re.compile(
+    r"^(?P<name>[^-]+)-(?P<ver>[^-]+)(-(?P<build>\d[^-]*))?-(?P<py>[^-]+)-(?P<abi>[^-]+)-(?P<plat>[^-]+)\.whl$"
+)
 
 
 def fetch(name: str, version: str) -> dict[str, object]:
     url = f"https://pypi.org/pypi/{name}/{version}/json"
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - fixed https host
+    with urllib.request.urlopen(url, timeout=30) as response:
         data: dict[str, object] = json.load(response)
     return data
 
@@ -46,11 +49,11 @@ def covers(wheel: str, interpreter: str, arch: str) -> bool:
 
 
 def main() -> int:
-    cutoff = datetime.fromisoformat(sys.argv[1]).replace(tzinfo=timezone.utc)
+    cutoff = datetime.fromisoformat(sys.argv[1]).replace(tzinfo=UTC)
     lines: list[str] = []
     problems: list[str] = []
-    for raw in Path("requirements-dev.in").read_text().splitlines():
-        raw = raw.strip()
+    for line in Path("requirements-dev.in").read_text().splitlines():
+        raw = line.strip()
         if not raw or raw.startswith("#"):
             continue
         name, _, version = raw.partition("==")

@@ -8,6 +8,7 @@ asks the PyPI JSON API for the release files, finds the file with that hash and 
 cutoff. Exit status: 0 all old enough, 1 a file is too new or unknown to PyPI, 2 usage or network error.
 Standard library only; needs the network (it is the one script that does).
 """
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 PIN = re.compile(r"^(?P<name>[A-Za-z0-9._-]+)==(?P<version>[A-Za-z0-9.!+_-]+)\s*\\?$")
@@ -43,12 +44,12 @@ def parse(text: str) -> dict[tuple[str, str], list[str]]:
 
 def main(argv: list[str]) -> int:
     try:
-        cutoff = datetime.fromisoformat(argv[1]) if len(argv) > 1 else datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.fromisoformat(argv[1]) if len(argv) > 1 else datetime.now(UTC) - timedelta(days=7)
     except ValueError:
         print("invalid cutoff date", file=sys.stderr)
         return 2
     if cutoff.tzinfo is None:
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
+        cutoff = cutoff.replace(tzinfo=UTC)
     pins = parse(Path(__file__).resolve().parent.parent.joinpath("requirements-dev.txt").read_text())
     if not pins:
         print("requirements-dev.txt pins nothing", file=sys.stderr)
@@ -60,7 +61,7 @@ def main(argv: list[str]) -> int:
             too_new.append(f"{name}=={version}: no hash pinned")
             continue
         try:
-            with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=30) as response:  # noqa: S310
+            with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=30) as response:
                 release = json.load(response)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
             print(f"{name}=={version}: PyPI lookup failed: {error}", file=sys.stderr)

@@ -7,6 +7,7 @@
 # usage: scripts/py.sh install            create the venv and install requirements-dev.txt (--require-hashes)
 #        scripts/py.sh <shell command>    run a command with the venv on PATH, no network
 #   PY_VERSION=3.13 (default) or 3.12
+#   PY_RW=1          mount the source read-write (only for `ruff format` and `ruff check --fix`)
 #   PY_NET=bridge    allow the network for one command (only scripts/lock-dev.py and scripts/check-dep-age.py need it)
 #
 # Images are the official `python` slim-trixie images, pinned by the digest of the multi-arch index.
@@ -23,6 +24,8 @@ case "$ver" in
 esac
 image=${PY_IMAGE:-$default_image}
 [ $# -ge 1 ] || { echo "usage: py.sh install | py.sh <shell command>" >&2; exit 2; }
+mode=ro
+[ -z "${PY_RW:-}" ] || mode=rw
 name=$(basename "$here")
 vol="py-venv-$name-$ver"
 mkdir -p "$here/out"
@@ -46,5 +49,5 @@ exec docker run --rm \
   -e HOME=/tmp/home -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUNBUFFERED=1 \
   -e PIP_CACHE_DIR=/venv/.pip-cache -e MYPY_CACHE_DIR=/work/out/.mypy_cache -e RUFF_CACHE_DIR=/work/out/.ruff_cache \
   -e COVERAGE_FILE=/work/out/.coverage -e PATH=/venv/bin:/usr/local/bin:/usr/bin:/bin \
-  -v "$here:/work:ro" -v "$here/out:/work/out" -v "$vol:/venv" -w /work \
+  -v "$here:/work:$mode" -v "$here/out:/work/out" -v "$vol:/venv" -w /work \
   "$image" sh -c "$cmd"
