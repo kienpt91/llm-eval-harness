@@ -43,6 +43,12 @@ markers = [
   "slow: starts real child processes or servers",
 ]
 filterwarnings = ["error"]
+# The suite's only wall-clock limit, and a generous one: a test that takes five minutes is stuck, not slow (the longest
+# honest test takes seconds even on a loaded 2-core runner). pytest dumps every thread's traceback and exits, so a
+# wedge fails with a stack instead of a cancelled CI job. Checks of *work* never use a clock: they use the pattern
+# engine's step counter or a CPU-time scaling ratio (tests/support/scaling.py).
+faulthandler_timeout = 300
+faulthandler_exit_on_timeout = true
 
 [tool.coverage.run]
 source = ["llm_eval_harness"]
