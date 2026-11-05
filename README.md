@@ -214,18 +214,18 @@ the test behind every claim and the limits (the harness is **not** a sandbox), i
 ## What is verified, and what is not
 
 Measured with `sh scripts/verify.sh` in the pinned container, on Python 3.13.17 and on Python 3.12.15 (same results):
-format check, `ruff`, `mypy --strict` on source, tests and scripts, **727 tests passed, 2 skipped** (the skips are two
+format check, `ruff`, `mypy --strict` on source, tests and scripts, **729 tests passed, 2 skipped** (the skips are two
 tests that need `git` or `node`, which the slim container does not have; CI runs the git checks as shell scripts).
 
 | layer | tests | line coverage | threshold |
 | --- | --- | --- | --- |
 | domain | 332 | 98.0% (2294 of 2342 statements) | 95% |
 | application | 77 | 99.4% (687 of 691) | 90% |
-| infrastructure | 112 | 96.9% (631 of 651) | none |
+| infrastructure | 112 | 96.9% (625 of 645) | none |
 | composition | | 92.3% (169 of 183) | none |
-| overall | 729 collected | 97.7% (3784 of 3873); branch coverage 95.0% | 85% |
+| overall | 731 collected | 97.7% (3778 of 3867); branch coverage 95.0% | 85% |
 
-The other tests: 53 end to end (the real command line in process, a built wheel installed and run, the worked
+The other tests: 55 end to end (the real command line in process, a built wheel installed and run, the worked
 example, hostile pipelines), 115 architecture (the layer rule over the real tree plus a snippet for every rule of the
 checker), 39 on the documentation and the repository (docs against code, links, SHA-pinned workflows, no vendor names).
 Coverage is `scripts/coverage_check.py` (line coverage of the package; the user programs the adapters start are not

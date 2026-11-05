@@ -306,3 +306,25 @@ def test_command_provider_through_the_cli(project: Path, tmp_path_factory: pytes
     )
     result = invoke(["run", "--config", "cmd.json", "--category", "quality"], project)
     assert result.code == 0 and "cost      0.0110 USD total" in result.out, result.out
+
+
+def test_a_default_config_that_is_a_symlink_out_of_the_project_is_refused_not_ignored(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "llm-eval.json").symlink_to(outside)
+    write_dataset(project / "cases.jsonl", QUALITY)
+    result = invoke(["validate", "--dataset", "cases.jsonl"], project)
+    assert result.code == 2 and "outside the project" in result.err
+
+
+def test_root_may_be_relative_to_the_working_directory(project: Path) -> None:
+    result = invoke(["--root", "sub", "validate", "--dataset", "cases.jsonl"], project.parent)
+    assert result.code == 2 and "is not a directory" in result.err
+    (project / "sub").mkdir()
+    write_dataset(project / "sub" / "cases.jsonl", QUALITY)
+    ok = invoke(["--root", "sub", "validate", "--dataset", "cases.jsonl"], project)
+    assert ok.code == 0 and "cases.jsonl: ok" in ok.out
+    again = invoke(["validate", "--root", "sub", "--dataset", "cases.jsonl"], project)  # also after the command
+    assert again.code == 0

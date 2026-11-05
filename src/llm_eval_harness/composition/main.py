@@ -41,7 +41,7 @@ from llm_eval_harness.domain.reportdoc import ReportDoc
 from llm_eval_harness.domain.text import sanitize
 from llm_eval_harness.infrastructure.cli.args import CliArgs, parse_args, usage_text
 from llm_eval_harness.infrastructure.clock import SystemClock
-from llm_eval_harness.infrastructure.fs import ProjectFilesystem, exists
+from llm_eval_harness.infrastructure.fs import ProjectFilesystem
 
 DEFAULT_CONFIG = "llm-eval.json"
 DEFAULT_SAFETY_PATH = "datasets/safety.jsonl"
@@ -68,7 +68,7 @@ class Context:
 def _config(files: ProjectFilesystem, explicit: str | None) -> Config:
     if explicit is not None:
         return load_config(files, explicit)
-    if exists(files, DEFAULT_CONFIG):
+    if os.path.lexists(files.root / DEFAULT_CONFIG):  # a symlink that leaves the project is an error, not "no file"
         return load_config(files, DEFAULT_CONFIG)
     return parse_config({}, "defaults")
 
@@ -244,7 +244,7 @@ def main(argv: list[str], *, environ: Mapping[str, str], cwd: str, stdout: TextI
         if args.help or not args.command:
             stdout.write(usage_text(args.command))
             return exitcodes.OK
-        root = Path(args.root or cwd)
+        root = Path(cwd) / args.root if args.root else Path(cwd)
         try:
             files = ProjectFilesystem(root)
         except OSError:
