@@ -168,12 +168,14 @@ def test_cost_and_latency_limits() -> None:
     assert lat.verdict == REGRESSION and "p95 latency rose 150.0%" in lat.reasons[0]
 
 
-def test_unknown_cost_is_never_compared() -> None:
+def test_unknown_cost_is_never_compared_and_cannot_dodge_a_cost_limit() -> None:
     base = snap([case_result("a", ("passed",), cost="0.001")])
     unpriced = snap([case_result("a", ("passed",), cost=None)])
-    result = compare(base, unpriced, CompareOptions(max_cost_increase_pct=1))
-    assert result.cost_per_run == Delta(None, None) and result.verdict == OK
-    assert any("cost increase not checked" in n for n in result.notes)
+    off = compare(base, unpriced, CompareOptions())
+    assert off.cost_per_run == Delta(None, None) and off.verdict == OK
+    limited = compare(base, unpriced, CompareOptions(max_cost_increase_pct=1))
+    assert limited.cost_per_run == Delta(None, None) and limited.verdict == REGRESSION
+    assert "cost is unknown" in limited.reasons[0]
 
 
 def test_delta_arithmetic() -> None:

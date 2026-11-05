@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from llm_eval_harness.domain.errors import Problem, ValidationError
+from llm_eval_harness.domain.identifiers import ID_PATTERN
 from llm_eval_harness.domain.jsonio import JsonValue, canonical, kind_of
+from llm_eval_harness.domain.limits import MAX_REPEAT, MAX_SAFETY_LISTED
+from llm_eval_harness.domain.model import CATEGORIES
 from llm_eval_harness.domain.report import REPORT_KIND, SCHEMA_VERSION, Summary
-from llm_eval_harness.domain.results import CaseStat
+from llm_eval_harness.domain.results import ERROR, FAILED, PASSED, CaseStat
+from llm_eval_harness.domain.stats import mean, percentile
 
 BASELINE_KIND = "llm-eval-baseline"
 MAX_CASES_READ = 100_000
@@ -159,6 +164,8 @@ class ReportDoc:
     currency: str
     summary: Summary
     cases: tuple[CaseDoc, ...]
+    safety_not_run: tuple[str, ...] = ()
+    safety_not_run_count: int = 0
 
 
 def _grade(r: Reader, value: JsonValue, path: str) -> GradeDoc:
@@ -213,12 +220,23 @@ def _run(r: Reader, value: JsonValue, path: str) -> RunDoc:
     grades = tuple(
         _grade(r, g, f"{path}.grades[{i}]") for i, g in enumerate(r.lst(r.child(d, "grades", path), f"{path}.grades"))
     )
+    status = r.req_s(d, "status", path)
+    if status not in (PASSED, FAILED, ERROR):
+        raise r.fail(f"{path}.status", f"must be {PASSED}, {FAILED} or {ERROR} (got {status!r})")
+    if (status == ERROR) != (error is not None) or (status == ERROR) != (out_raw is None):
+        raise r.fail(path, "has an error without status error, or status error without an error (or an output)")
+    score = r.req_n(d, "score", path)
+    if not 0.0 <= score <= 1.0:
+        raise r.fail(f"{path}.score", f"must be between 0 and 1 (got {score})")
+    failed_musts = r.strs(d, "failed_musts", path)
+    if failed_musts and status != FAILED:
+        raise r.fail(f"{path}.failed_musts", "can only be set on a failed run")
     return RunDoc(
         r.i(d, "repeat", path),
         r.i(d, "attempts", path),
-        r.req_s(d, "status", path),
-        r.req_n(d, "score", path),
-        r.strs(d, "failed_musts", path),
+        status,
+        score,
+        failed_musts,
         grades,
         text,
         truncated,
@@ -244,8 +262,31 @@ def _case(r: Reader, value: JsonValue, path: str) -> CaseDoc:
         mean_score=r.req_n(c, "mean_score", path),
         score_variance=r.req_n(c, "score_variance", path),
     )
-    runs = tuple(_run(r, v, f"{path}.runs[{i}]") for i, v in enumerate(r.lst(r.child(c, "runs", path), f"{path}.runs")))
-    return CaseDoc(stat, r.strs(c, "tags", path), r.req_s(c, "input", path), r.req_s(c, "status", path), runs)
+    if not ID_PATTERN.fullmatch(stat.id) or len(stat.id) > 128:
+        raise r.fail(f"{path}.id", "must use letters, digits and . _ : / - only, and be at most 128 characters")
+    if stat.category not in CATEGORIES:
+        raise r.fail(f"{path}.category", f"must be one of {', '.join(CATEGORIES)}")
+    runs_raw = r.lst(r.child(c, "runs", path), f"{path}.runs")
+    if len(runs_raw) > MAX_REPEAT:
+        raise r.fail(f"{path}.runs", f"has more than {MAX_REPEAT} runs")
+    runs = tuple(_run(r, v, f"{path}.runs[{i}]") for i, v in enumerate(runs_raw))
+    # the counts are redundant with the runs: they must agree, so that nobody has to trust which one is edited
+    real = CaseStat(
+        stat.id,
+        stat.category,
+        stat.case_hash,
+        graded_runs=sum(1 for run in runs if run.status != ERROR),
+        passes=sum(1 for run in runs if run.status == PASSED),
+        errors=sum(1 for run in runs if run.status == ERROR),
+        mean_score=stat.mean_score,
+    )
+    for name in ("graded_runs", "passes", "errors"):
+        if getattr(stat, name) != getattr(real, name):
+            raise r.fail(f"{path}.{name}", f"is {getattr(stat, name)} but its runs show {getattr(real, name)}")
+    status = r.req_s(c, "status", path)
+    if status != real.status:
+        raise r.fail(f"{path}.status", f"is {status!r} but its runs show {real.status!r}")
+    return CaseDoc(stat, r.strs(c, "tags", path), r.req_s(c, "input", path), status, runs)
 
 
 def _summary(r: Reader, value: JsonValue) -> Summary:
@@ -293,7 +334,15 @@ def parse_report(doc: JsonValue, source: str) -> ReportDoc:
     seed = r.n(run, "seed", "run", nullable=True)
     sample = r.n(run, "sample", "run", nullable=True)
     summary_raw = r.child(root, "summary", "")
-    return ReportDoc(
+    not_run_raw = r.lst(r.child(dataset, "safety_not_run", "dataset"), "dataset.safety_not_run")
+    not_run = r.strs(dataset, "safety_not_run", "dataset")
+    for index, case_id in enumerate(not_run):
+        if not ID_PATTERN.fullmatch(case_id) or len(case_id) > 128:
+            raise r.fail(f"dataset.safety_not_run[{index}]", "is not a valid case id")
+    not_run_count = r.i(dataset, "safety_not_run_count", "dataset")
+    if len(not_run) > MAX_SAFETY_LISTED or not len(not_run_raw) <= not_run_count:
+        raise r.fail("dataset.safety_not_run_count", f"is {not_run_count}, less than the {len(not_run_raw)} ids listed")
+    report = ReportDoc(
         tool_version=r.req_s(tool, "version", "tool"),
         started_at=r.req_s(root, "started_at", ""),
         finished_at=r.req_s(root, "finished_at", ""),
@@ -312,4 +361,69 @@ def parse_report(doc: JsonValue, source: str) -> ReportDoc:
         ),
         summary=_summary(r, summary_raw),
         cases=tuple(_case(r, c, f"cases[{i}]") for i, c in enumerate(cases_raw)),
+        safety_not_run=not_run,
+        safety_not_run_count=not_run_count,
     )
+    _check_consistency(r, report, r.i(dataset, "selected_cases", "dataset"))
+    return report
+
+
+def _close(a: float | None, b: float | None, tolerance: float = 1e-6) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return math.isclose(a, b, rel_tol=1e-6, abs_tol=tolerance)
+
+
+def _check_consistency(r: Reader, doc: ReportDoc, selected: int) -> None:
+    """The report says the same thing twice (cases and runs, then the summary); the two must agree."""
+    seen: set[str] = set()
+    for index, case in enumerate(doc.cases):
+        if case.stat.id in seen:
+            raise r.fail(f"cases[{index}].id", f"duplicate case id {case.stat.id!r}")
+        seen.add(case.stat.id)
+    if selected != len(doc.cases):
+        raise r.fail("dataset.selected_cases", f"is {selected} but the report has {len(doc.cases)} cases")
+    s = doc.summary
+    stats = [c.stat for c in doc.cases]
+    runs = [run for c in doc.cases for run in c.runs]
+    outputs = [run for run in runs if run.text is not None]
+    quality = [x for x in stats if x.category == "quality"]
+    safety = [x for x in stats if x.category == "safety"]
+    rates = [x.pass_rate for x in quality if x.pass_rate is not None]
+    costs = [run.cost for run in outputs if run.cost is not None]
+    unpriced = sum(1 for run in outputs if run.cost is None)
+    latencies = [run.latency_ms for run in outputs]
+    total_cost = sum(costs) if costs and unpriced == 0 else None
+    expected: list[tuple[str, object, object]] = [
+        ("summary.cases", s.cases, len(doc.cases)),
+        ("summary.runs", s.runs, len(runs)),
+        ("summary.graded_runs", s.graded_runs, sum(x.graded_runs for x in stats)),
+        ("summary.errored_runs", s.errored_runs, sum(x.errors for x in stats)),
+        ("summary.quality.cases", s.quality_cases, len(quality)),
+        ("summary.safety.cases", s.safety_cases, len(safety)),
+        ("summary.safety.failing_cases", s.safety_failing_cases, sum(1 for x in safety if x.failures)),
+        ("summary.safety.failing_runs", s.safety_failing_runs, sum(x.failures for x in safety)),
+        ("summary.flaky_cases", s.flaky_cases, sum(1 for x in stats if x.flaky)),
+        ("summary.tokens.input", s.input_tokens, sum(run.input_tokens for run in outputs)),
+        ("summary.tokens.output", s.output_tokens, sum(run.output_tokens for run in outputs)),
+        ("summary.cost.unpriced_runs", s.unpriced_runs, unpriced),
+        (
+            "summary.quality.fully_passing",
+            s.quality_fully_passing,
+            sum(1 for x in quality if x.graded_runs and not x.failures and not x.errors),
+        ),
+    ]
+    for name, stored, real in expected:
+        if stored != real:
+            raise r.fail(name, f"is {stored} but the report has {real}")
+    approximate: list[tuple[str, float | None, float | None]] = [
+        ("summary.quality.mean_pass_rate", s.quality_mean_pass_rate, mean(rates) if rates else None),
+        ("summary.cost.total", s.total_cost, total_cost),
+        ("summary.latency_ms.p50", s.latency_p50, percentile(latencies, 50)),
+        ("summary.latency_ms.p95", s.latency_p95, percentile(latencies, 95)),
+        ("summary.latency_ms.max", s.latency_max, max(latencies, default=0.0)),
+        ("summary.latency_ms.mean", s.latency_mean, mean(latencies)),
+    ]
+    for name, stored_value, real_value in approximate:
+        if not _close(stored_value, real_value, 2e-3 if "latency" in name else 1e-5):
+            raise r.fail(name, f"is {stored_value} but the runs give {real_value}")

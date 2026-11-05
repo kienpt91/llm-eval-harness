@@ -95,7 +95,6 @@ class ProjectFilesystem:
             try:
                 with os.fdopen(handle, "wb") as out:
                     out.write(text.encode("utf-8"))
-                os.chmod(temporary, 0o644)
                 os.replace(temporary, target)
             except BaseException:
                 with contextlib.suppress(OSError):

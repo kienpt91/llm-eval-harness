@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from llm_eval_harness.domain.errors import UsageError
+from llm_eval_harness.domain.limits import MAX_CASES, MAX_CONCURRENCY, MAX_REPEAT, MAX_RETRIES, MAX_TIMEOUT_S
 from llm_eval_harness.infrastructure.cli.help import HELP, command_help
 
 COMMANDS = ("run", "compare", "gate", "baseline", "validate", "init-safety")
@@ -54,6 +55,7 @@ class CliArgs:
     min_pass_rate: float | None = None
     on_inconclusive: str | None = None
     fail_on_removed: bool = False
+    allow_partial_safety: bool = False
     markdown: str | None = None
 
     def has_run_options(self) -> bool:
@@ -146,6 +148,7 @@ def _build() -> argparse.ArgumentParser:
             p.add_argument("--min-pass-rate", type=_number)
             p.add_argument("--on-inconclusive", choices=("fail", "pass"))
             p.add_argument("--fail-on-removed", action="store_true")
+            p.add_argument("--allow-partial-safety", action="store_true")
         elif name == "baseline":
             p.add_argument("--report")
             p.add_argument("--out")
@@ -177,6 +180,24 @@ def parse_args(argv: list[str]) -> CliArgs:
             raise UsageError(f"{name} must be positive")
     if args.retries is not None and args.retries < 0:
         raise UsageError("--retries must not be negative")
+    # the same ranges as the configuration file: a flag must not reach what the file refuses
+    ranges: tuple[tuple[str, float | None, float, float], ...] = (
+        ("--repeat", args.repeat, 1, MAX_REPEAT),
+        ("--concurrency", args.concurrency, 1, MAX_CONCURRENCY),
+        ("--retries", args.retries, 0, MAX_RETRIES),
+        ("--timeout", args.timeout, 0.1, MAX_TIMEOUT_S),
+        ("--sample", args.sample, 1, MAX_CASES),
+        ("--seed", args.seed, 0, 2**63 - 1),
+        ("--tolerance", args.tolerance, 0, 1),
+        ("--alpha", args.alpha, 1e-6, 0.5),
+        ("--min-pass-rate", args.min_pass_rate, 0, 1),
+        ("--max-regressed-cases", args.max_regressed_cases, 0, MAX_CASES),
+        ("--max-cost-increase-pct", args.max_cost_increase_pct, 0, 1e6),
+        ("--max-p95-latency-increase-pct", args.max_p95_latency_increase_pct, 0, 1e6),
+    )
+    for name, value, low, high in ranges:
+        if value is not None and not low <= value <= high:
+            raise UsageError(f"{name} must be between {low:g} and {high:g} (got {value:g})")
     return args
 
 

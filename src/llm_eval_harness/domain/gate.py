@@ -2,7 +2,8 @@
 
 Order of precedence, strongest first:
 
-4  a safety case failed in any run. Never averaged away, never excused by a baseline.
+4  a safety case failed in any run, or a safety case of the dataset or the baseline was not run (filtered, sampled
+   out, removed or recategorised). Never averaged away, never excused by a baseline or a quality improvement.
 3  a run could not be graded (provider or infrastructure error after retries): the answer is unknown.
 1  quality regression: a case regressed against the baseline, a cost or latency limit was exceeded, the pass
    rate is below the minimum, or the comparison is inconclusive and ``on_inconclusive`` is ``fail``.
@@ -16,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from llm_eval_harness.domain import exitcodes
-from llm_eval_harness.domain.compare import INCONCLUSIVE_OVERALL, REGRESSION, REMOVED, Comparison
+from llm_eval_harness.domain.compare import CHANGED, INCONCLUSIVE_OVERALL, NEW, REGRESSION, REMOVED, Comparison
 from llm_eval_harness.domain.reportdoc import ReportDoc
 
 
@@ -25,6 +26,7 @@ class GateOptions:
     min_pass_rate: float | None = None
     on_inconclusive: str = "fail"
     fail_on_removed: bool = False
+    allow_partial_safety: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,14 +49,19 @@ def _names(ids: list[str]) -> str:
 
 
 def decide(report: ReportDoc, comparison: Comparison | None, options: GateOptions) -> GateDecision:
+    safety_reasons: list[str] = []
     safety_failed = sorted(c.stat.id for c in report.cases if c.stat.category == "safety" and c.stat.failures > 0)
     if safety_failed:
         runs = report.summary.safety_failing_runs
-        return GateDecision(
-            exitcodes.SAFETY,
-            (f"safety case(s) failed in {runs} run(s): {_names(safety_failed)}",),
-            _notes(comparison),
+        safety_reasons.append(f"safety case(s) failed in {runs} run(s): {_names(safety_failed)}")
+    not_run = _safety_not_run(report, comparison)
+    if not_run and not options.allow_partial_safety:
+        safety_reasons.append(
+            f"safety coverage is incomplete: {len(not_run)} safety case(s) were not run: {_names(not_run)} "
+            "(a filtered, sampled or removed safety case is not a passing one; --allow-partial-safety accepts it)"
         )
+    if safety_reasons:
+        return GateDecision(exitcodes.SAFETY, tuple(safety_reasons), _notes(comparison))
     errored = sorted(c.stat.id for c in report.cases if c.stat.errors > 0)
     if errored:
         kinds = sorted({r.error[0] for c in report.cases for r in c.runs if r.error is not None})
@@ -76,6 +83,18 @@ def decide(report: ReportDoc, comparison: Comparison | None, options: GateOption
             reasons.append(
                 "the comparison with the baseline is inconclusive and --on-inconclusive is fail (add --repeat)"
             )
+        unvetted = sorted(
+            c.id
+            for c in comparison.cases
+            if c.verdict in (NEW, CHANGED)
+            and c.current is not None
+            and c.current.category == "quality"
+            and c.current.failures > 0
+        )
+        if unvetted:
+            reasons.append(
+                f"{len(unvetted)} new or changed quality case(s) fail and have no baseline result to excuse them: {_names(unvetted)}"
+            )
         if options.fail_on_removed:
             removed = sorted(c.id for c in comparison.cases if c.verdict == REMOVED)
             if removed:
@@ -83,6 +102,22 @@ def decide(report: ReportDoc, comparison: Comparison | None, options: GateOption
     if reasons:
         return GateDecision(exitcodes.QUALITY_REGRESSION, tuple(reasons), _notes(comparison))
     return GateDecision(exitcodes.OK, (), _notes(comparison))
+
+
+def _safety_not_run(report: ReportDoc, comparison: Comparison | None) -> list[str]:
+    """Safety cases that exist in the dataset or the baseline but have no safety result in this report."""
+    missing = set(report.safety_not_run)
+    if report.safety_not_run_count > len(report.safety_not_run):
+        missing.add(f"{report.safety_not_run_count - len(report.safety_not_run)} more")
+    if comparison is not None:
+        for c in comparison.cases:
+            if (
+                c.base is not None
+                and c.base.category == "safety"
+                and (c.current is None or c.current.category != "safety")
+            ):
+                missing.add(c.id)
+    return sorted(missing)
 
 
 def _notes(comparison: Comparison | None) -> tuple[str, ...]:

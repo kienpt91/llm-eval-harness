@@ -169,7 +169,10 @@ def _judge(result: Comparison, options: CompareOptions, cost_comparable: bool) -
     pct = result.cost_per_run.percent
     if options.max_cost_increase_pct is not None:
         if not cost_comparable:
-            notes.append("cost increase not checked: cost is unknown on one side")
+            reasons.append(
+                "a cost limit is set but cost is unknown on at least one side "
+                "(a run without usage, or a model that is not in the price table): it cannot be shown to be within the limit"
+            )
         elif pct is not None and pct > options.max_cost_increase_pct + EPSILON:
             reasons.append(f"mean cost per run rose {pct:.1f}% (allowed {options.max_cost_increase_pct:g}%)")
     lat = result.latency_p95.percent

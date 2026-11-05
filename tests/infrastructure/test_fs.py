@@ -90,7 +90,7 @@ def test_writes_create_directories_and_return_the_relative_path(project: tuple[P
     fs, root, _ = project
     assert fs.write_text("out/deep/report.json", "data", overwrite=False) == "out/deep/report.json"
     assert (root / "out" / "deep" / "report.json").read_text() == "data"
-    assert oct((root / "out" / "deep" / "report.json").stat().st_mode & 0o777) == "0o644"
+    assert oct((root / "out" / "deep" / "report.json").stat().st_mode & 0o777) == "0o600"
     assert [p.name for p in (root / "out" / "deep").iterdir()] == ["report.json"]  # no temporary file left behind
 
 

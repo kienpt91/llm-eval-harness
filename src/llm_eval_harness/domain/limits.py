@@ -33,3 +33,11 @@ fails the grader closed; ordinary patterns on ordinary text use a few percent of
 MAX_REDACT_CHARS = 32 * 1024
 """Longest string the redactor looks at. Anything beyond is not stored: it is replaced by a count. Stored output is
 cut at ``STORED_OUTPUT_CHARS`` anyway, and every pattern that runs on it therefore works on bounded text."""
+
+MAX_REPEAT = 1000
+"""Most runs of one case (``--repeat``); also the most runs a report may hold for one case."""
+MAX_CONCURRENCY = 64
+MAX_RETRIES = 10
+MAX_TIMEOUT_S = 3600.0
+MAX_SAFETY_LISTED = 1000
+"""Most ids of safety cases that were not run that a report lists (it also counts them)."""

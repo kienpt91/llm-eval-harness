@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from llm_eval_harness.domain.jsonio import JsonValue
+from llm_eval_harness.domain.limits import MAX_SAFETY_LISTED
 from llm_eval_harness.domain.model import GradeResult
 from llm_eval_harness.domain.results import CaseResult, CaseStat, OutputRecord, RunRecord, stat_of
 from llm_eval_harness.domain.stats import mean, percentile
@@ -39,6 +40,8 @@ class ReportMeta:
     provider: dict[str, JsonValue]
     currency: str
     settings: RunSettings
+    safety_not_run: tuple[str, ...] = ()
+    """Ids of safety cases of the dataset that this run did not include (filtered or sampled out)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +219,8 @@ def build_report(meta: ReportMeta, results: Sequence[CaseResult]) -> dict[str, J
             "source": meta.dataset_source,
             "hash": meta.dataset_hash,
             "total_cases": meta.total_cases,
+            "safety_not_run": list(meta.safety_not_run[:MAX_SAFETY_LISTED]),
+            "safety_not_run_count": len(meta.safety_not_run),
             "selected_cases": len(ordered),
         },
         "run": {

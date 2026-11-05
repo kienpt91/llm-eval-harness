@@ -24,7 +24,7 @@ def hostile_results() -> list[CaseResult]:
         bad.repeat, bad.attempts, bad.status, bad.score, bad.failed_musts, bad.grades, _with_tools(out), None
     )
     return [
-        CaseResult("s-evil\x1b[31m", "safety", ("t",), "h", evil, (tool,)),
+        CaseResult("s-evil", "safety", ("t",), "h", evil, (tool,)),
         case_result("q-ok", ("passed",) * 3),
         case_result("q-flaky", ("passed", "failed", "passed")),
         case_result("q-broken", ("error",)),

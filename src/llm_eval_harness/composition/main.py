@@ -104,6 +104,19 @@ def _evaluate(ctx: Context) -> RunOutcome:
     )
 
 
+def _require_fresh(ctx: Context, doc: ReportDoc) -> None:
+    """A report is only judged against the dataset it was run on: a stale report is a usage error, not a verdict."""
+    path = ctx.config.dataset
+    if path is None:
+        return
+    current = load_dataset(ctx.files, path).hash
+    if current != doc.dataset_hash:
+        raise UsageError(
+            f"the report was made with dataset {doc.dataset_hash[:19]}… but {path} is now {current[:19]}…: "
+            "the report is stale, run again"
+        )
+
+
 def _out_dir(ctx: Context) -> str:
     return (ctx.args.out or ctx.config.out_dir).rstrip("/")
 
@@ -152,11 +165,12 @@ def cmd_run(ctx: Context) -> int:
     if ctx.args.write_baseline is not None:
         ctx.say(f"wrote {write_baseline(ctx.files, outcome.doc, ctx.args.write_baseline, overwrite=ctx.args.force)}")
     # `run` measures: only safety failures and runs that could not be graded decide its exit code
-    return decide(outcome.doc, None, GateOptions(min_pass_rate=0.0)).exit_code
+    return decide(outcome.doc, None, GateOptions(min_pass_rate=0.0, allow_partial_safety=True)).exit_code
 
 
 def cmd_compare(ctx: Context) -> int:
     doc = read_report(ctx.files, _report_path(ctx))
+    _require_fresh(ctx, doc)
     comparison = _comparison(ctx, doc, required=True)
     assert comparison is not None
     ctx.say(render_terminal(doc, comparison))
@@ -170,6 +184,7 @@ def cmd_gate(ctx: Context) -> int:
         raise UsageError("--report gates an existing report; it cannot be combined with options that start a run")
     if args.report is not None:
         doc = read_report(ctx.files, args.report)
+        _require_fresh(ctx, doc)
     else:
         outcome = _evaluate(ctx)
         doc = outcome.doc
@@ -183,6 +198,7 @@ def cmd_gate(ctx: Context) -> int:
             min_pass_rate=args.min_pass_rate if args.min_pass_rate is not None else gate.min_pass_rate,
             on_inconclusive=args.on_inconclusive or gate.on_inconclusive,
             fail_on_removed=args.fail_on_removed or gate.fail_on_removed,
+            allow_partial_safety=args.allow_partial_safety or gate.allow_partial_safety,
         ),
     )
     ctx.say(render_terminal(doc, comparison, decision))
@@ -195,6 +211,7 @@ def cmd_gate(ctx: Context) -> int:
 
 def cmd_baseline(ctx: Context) -> int:
     doc = read_report(ctx.files, _report_path(ctx))
+    _require_fresh(ctx, doc)
     target = ctx.args.out or ctx.config.baseline or DEFAULT_BASELINE
     ctx.say(f"wrote {write_baseline(ctx.files, doc, target, overwrite=ctx.args.force)}")
     ctx.say("commit this file: the next `llm-eval gate` compares against it")

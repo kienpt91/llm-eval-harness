@@ -10,15 +10,19 @@ from llm_eval_harness.domain.errors import Problem, ValidationError
 from llm_eval_harness.domain.grading.params import Params
 from llm_eval_harness.domain.grading.regexsafe import check_pattern
 from llm_eval_harness.domain.jsonio import JsonValue, kind_of
-from llm_eval_harness.domain.limits import DEFAULT_MAX_OUTPUT_BYTES, HARD_MAX_OUTPUT_BYTES
+from llm_eval_harness.domain.limits import (
+    DEFAULT_MAX_OUTPUT_BYTES,
+    HARD_MAX_OUTPUT_BYTES,
+    MAX_CONCURRENCY,
+    MAX_REPEAT,
+    MAX_RETRIES,
+    MAX_TIMEOUT_S,
+)
 from llm_eval_harness.domain.model import GraderSpec
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 HEADER_NAME = re.compile(r"[A-Za-z0-9-]{1,64}")
 PROVIDER_TYPES = ("command", "http", "fake")
-MAX_CONCURRENCY = 64
-MAX_REPEAT = 1000
-MAX_RETRIES = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,7 @@ class GateSettings:
     min_pass_rate: float | None = None
     on_inconclusive: str = "fail"
     fail_on_removed: bool = False
+    allow_partial_safety: bool = False
     tolerance: float = 0.0
     alpha: float = 0.05
     deterministic: bool = False
@@ -189,7 +194,7 @@ def _defaults(raw: dict[str, JsonValue] | None, problems: list[Problem]) -> Defa
     return Defaults(
         repeat=p.integer("repeat", default=1, minimum=1, maximum=MAX_REPEAT),
         concurrency=p.integer("concurrency", default=4, minimum=1, maximum=MAX_CONCURRENCY),
-        timeout_s=p.number("timeout_s", default=30.0, minimum=0.1, maximum=3600.0) or 30.0,
+        timeout_s=p.number("timeout_s", default=30.0, minimum=0.1, maximum=MAX_TIMEOUT_S) or 30.0,
         retries=p.integer("retries", default=1, minimum=0, maximum=MAX_RETRIES),
         seed=None if seed is None else int(seed),
     )
@@ -204,6 +209,7 @@ def _gate(raw: dict[str, JsonValue] | None, problems: list[Problem]) -> GateSett
             "min_pass_rate",
             "on_inconclusive",
             "fail_on_removed",
+            "allow_partial_safety",
             "tolerance",
             "alpha",
             "deterministic",
@@ -216,6 +222,7 @@ def _gate(raw: dict[str, JsonValue] | None, problems: list[Problem]) -> GateSett
         min_pass_rate=p.number("min_pass_rate", minimum=0.0, maximum=1.0),
         on_inconclusive=p.choice("on_inconclusive", ("fail", "pass"), default="fail"),
         fail_on_removed=p.boolean("fail_on_removed", default=False),
+        allow_partial_safety=p.boolean("allow_partial_safety", default=False),
         tolerance=p.number("tolerance", default=0.0, minimum=0.0, maximum=1.0) or 0.0,
         alpha=p.number("alpha", default=0.05, minimum=1e-6, maximum=0.5) or 0.05,
         deterministic=p.boolean("deterministic", default=False),

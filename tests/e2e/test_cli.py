@@ -328,3 +328,87 @@ def test_root_may_be_relative_to_the_working_directory(project: Path) -> None:
     assert ok.code == 0 and "cases.jsonl: ok" in ok.out
     again = invoke(["validate", "--root", "sub", "--dataset", "cases.jsonl"], project)  # also after the command
     assert again.code == 0
+
+
+def test_a_gate_that_leaves_the_safety_suite_out_does_not_pass(project: Path) -> None:
+    for argv in (["gate", "--category", "quality"], ["gate", "--case", "q1"], ["gate", "--sample", "1", "--seed", "1"]):
+        result = invoke(argv, project)
+        if "safety    1 case" in result.out:
+            continue  # the sample happened to include the safety case
+        assert result.code == 4, (argv, result.out)
+        assert "safety coverage is incomplete" in result.out and "s1" in result.out
+    allowed = invoke(["gate", "--category", "quality", "--allow-partial-safety"], project)
+    assert allowed.code == 0, allowed.out
+    # `run` only measures: a partial run is allowed there
+    assert invoke(["run", "--category", "quality"], project).code == 0
+
+
+def test_removing_a_safety_case_from_the_dataset_is_caught_against_the_baseline(project: Path) -> None:
+    invoke(["run", "--write-baseline", "baseline.json"], project)
+    write_dataset(project / "cases.jsonl", QUALITY)  # the safety case is gone
+    write_json(project / "llm-eval.json", config(baseline="baseline.json", gate={"deterministic": True}))
+    result = invoke(["gate"], project)
+    assert result.code == 4 and "s1" in result.out and "safety coverage is incomplete" in result.out
+
+
+def test_a_stale_report_is_refused_instead_of_judged(project: Path) -> None:
+    invoke(["run", "--write-baseline", "b.json"], project)
+    write_dataset(
+        project / "cases.jsonl", {**QUALITY, "expected": {"facts": ["31 days"]}}, SAFETY
+    )  # the dataset moved on
+    for argv in (["gate", "--report", "out/report.json"], ["compare", "--baseline", "b.json"], ["baseline", "--force"]):
+        result = invoke(argv, project)
+        assert result.code == 2 and "stale" in result.err, (argv, result.err)
+
+
+def test_the_gate_judges_a_fresh_report_for_the_same_dataset(project: Path) -> None:
+    invoke(["run"], project)
+    assert invoke(["gate", "--report", "out/report.json"], project).code == 0
+
+
+def test_a_hand_edited_report_cannot_hide_a_safety_failure(project: Path) -> None:
+    write_json(
+        project / "bad.json",
+        config(
+            {
+                "type": "fake",
+                "script": {
+                    "q1": {"text": "30 days"},
+                    "s1": {"text": "x", "tool_calls": [{"name": "issue_refund", "arguments": {}}]},
+                },
+            }
+        ),
+    )
+    invoke(["run", "--config", "bad.json"], project)
+    report = json.loads((project / "out" / "report.json").read_text())
+    safety = next(c for c in report["cases"] if c["id"] == "s1")
+    safety["passes"], safety["graded_runs"] = 5, 1  # negative failures: the old gate read this as "no failure"
+    (project / "out" / "edited.json").write_text(json.dumps(report))
+    result = invoke(["gate", "--report", "out/edited.json"], project)
+    assert result.code == 2 and "cases[1].passes: is 5 but its runs show 0" in result.err
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "fragment"),
+    [
+        ("--repeat", "1000000000", "--repeat must be between 1 and 1000"),
+        ("--concurrency", "100000", "--concurrency must be between 1 and 64"),
+        ("--retries", "99", "--retries must be between 0 and 10"),
+        ("--timeout", "99999", "--timeout must be between 0.1 and 3600"),
+        ("--sample", "99999", "--sample must be between 1 and 10000"),
+        ("--tolerance", "5", "--tolerance must be between 0 and 1"),
+        ("--alpha", "1", "--alpha must be between 1e-06 and 0.5"),
+        ("--min-pass-rate", "2", "--min-pass-rate must be between 0 and 1"),
+        ("--max-regressed-cases", "99999999", "--max-regressed-cases must be between 0 and 10000"),
+    ],
+)
+def test_flags_cannot_exceed_the_ranges_the_configuration_enforces(
+    project: Path, flag: str, value: str, fragment: str
+) -> None:
+    result = invoke(["gate", flag, value], project)
+    assert result.code == 2 and fragment in result.err
+
+
+def test_reports_are_private_files(project: Path) -> None:
+    invoke(["run"], project)
+    assert (project / "out" / "report.json").stat().st_mode & 0o777 == 0o600

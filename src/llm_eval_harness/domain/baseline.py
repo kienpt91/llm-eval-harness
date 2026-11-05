@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from llm_eval_harness.domain.identifiers import ID_PATTERN
 from llm_eval_harness.domain.jsonio import JsonValue
+from llm_eval_harness.domain.limits import MAX_REPEAT
+from llm_eval_harness.domain.model import CATEGORIES
 from llm_eval_harness.domain.report import SCHEMA_VERSION, TOOL_NAME
 from llm_eval_harness.domain.reportdoc import BASELINE_KIND, Reader, ReportDoc
 from llm_eval_harness.domain.results import CaseStat
@@ -101,8 +104,10 @@ def parse_baseline(value: JsonValue, source: str) -> Snapshot:
     cases: dict[str, CaseStat] = {}
     for cid, raw in r.obj(r.child(root, "cases", ""), "cases").items():
         path = f"cases.{cid}"
+        if not ID_PATTERN.fullmatch(cid) or len(cid) > 128:
+            raise r.fail("cases", f"has an id that is not a valid case id: {cid[:40]!r}")
         c = r.obj(raw, path)
-        cases[cid] = CaseStat(
+        stat = CaseStat(
             id=cid,
             category=r.req_s(c, "category", path),
             case_hash=r.req_s(c, "case_hash", path),
@@ -111,11 +116,16 @@ def parse_baseline(value: JsonValue, source: str) -> Snapshot:
             errors=r.i(c, "errors", path),
             mean_score=r.req_n(c, "mean_score", path),
         )
-        if (
-            cases[cid].passes > cases[cid].graded_runs
-            or min(cases[cid].passes, cases[cid].graded_runs, cases[cid].errors) < 0
-        ):
+        if stat.category not in CATEGORIES:
+            raise r.fail(f"{path}.category", f"must be one of {', '.join(CATEGORIES)}")
+        for name in ("graded_runs", "errors"):
+            if getattr(stat, name) > MAX_REPEAT:
+                raise r.fail(f"{path}.{name}", f"is more than {MAX_REPEAT}, the most runs one case can have")
+        if min(stat.passes, stat.graded_runs, stat.errors) < 0 or stat.passes > stat.graded_runs:
             raise r.fail(path, "has inconsistent run counts")
+        if stat.graded_runs + stat.errors > MAX_REPEAT:
+            raise r.fail(path, f"has more than {MAX_REPEAT} runs")
+        cases[cid] = stat
     return Snapshot(
         dataset_hash=r.req_s(dataset, "hash", "dataset"),
         repeat=r.i(run, "repeat", "run"),

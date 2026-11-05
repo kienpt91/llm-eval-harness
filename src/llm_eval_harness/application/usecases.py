@@ -105,6 +105,8 @@ def run_evaluation(
         prices=prices,
     )
     results = run_cases(selected, provider, judge, redactor, clock, options)
+    run_ids = {c.id for c in selected}
+    safety_not_run = tuple(c.id for c in dataset.cases if c.is_safety and c.id not in run_ids)
     meta = ReportMeta(
         tool_version=request.version,
         started_at=started,
@@ -124,6 +126,7 @@ def run_evaluation(
             retries=request.retries,
             redacted=redactor.enabled,
         ),
+        safety_not_run=safety_not_run,
     )
     document = build_report(meta, results)
     doc = parse_report(document, REPORT_FILE)  # what is written is what a later `compare` or `gate` reads back

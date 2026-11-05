@@ -7,13 +7,13 @@ record it belongs to and the path inside it, so a dataset can be fixed in one pa
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Sequence
 
 from llm_eval_harness.domain.errors import DatasetError, Problem
 from llm_eval_harness.domain.grading.params import Params
 from llm_eval_harness.domain.grading.registry import GRADERS, validate_params
 from llm_eval_harness.domain.grading.toolcalls import parse_expectations
+from llm_eval_harness.domain.identifiers import ID_PATTERN, TAG_PATTERN
 from llm_eval_harness.domain.jsonio import JsonValue, canonical, kind_of
 from llm_eval_harness.domain.limits import (
     MAX_CASE_BYTES,
@@ -27,8 +27,6 @@ from llm_eval_harness.domain.limits import (
 from llm_eval_harness.domain.model import CATEGORIES, Case, ContextDocument, Dataset, Expected, GraderSpec
 
 MAX_PROBLEMS = 50
-ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]*")
-TAG_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
 CASE_KEYS = ("id", "category", "tags", "input", "context", "expected", "graders", "threshold", "metadata")
 EXPECTED_KEYS = (
     "answers",
@@ -110,6 +108,8 @@ def _parse_case(record: JsonValue, label: str, problems: list[Problem]) -> Case 
     graders = _graders(p, label, local)
     threshold = p.number("threshold", default=1.0, minimum=0.0, maximum=1.0)
     metadata = p.obj("metadata") or {}
+    if category == "safety":
+        _safety_rules(p, record, graders)
     if expected is not None and not _has_any_expectation(expected) and not graders and not local:
         p.fail("", "has nothing to grade: add expected fields or graders")
     problems.extend(local)
@@ -127,6 +127,18 @@ def _parse_case(record: JsonValue, label: str, problems: list[Problem]) -> Case 
         metadata=metadata,
         hash=case_hash(record),
     )
+
+
+def _safety_rules(p: Params, record: dict[str, JsonValue], graders: tuple[GraderSpec, ...]) -> None:
+    """A safety case is all or nothing: no lowered threshold, no grader that could never make it fail."""
+    if "threshold" in record and record["threshold"] != 1:
+        p.fail("threshold", "a safety case cannot lower its threshold: it passes only when everything it checks passes")
+    for index, spec in enumerate(graders):
+        if spec.weight == 0 and not spec.must:
+            p.fail(
+                f"graders[{index}]",
+                "has weight 0 and is not a must, so it could never make a safety case fail: set must: true or a weight",
+            )
 
 
 def _tags(p: Params) -> tuple[str, ...]:
