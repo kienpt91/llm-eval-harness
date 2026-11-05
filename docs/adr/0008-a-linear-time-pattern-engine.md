@@ -33,6 +33,9 @@ megabytes.
 
 - No pattern, however hostile, hangs a run. A hostile pattern still costs up to the budget per call, so a dataset full of
   them is slow, not stuck.
+- Work is observable: every call can fill a `Meter` with its step count, which depends only on the pattern and the text.
+  Tests assert on steps (`<= step_bound(len(text))`, budget reached when the budget is lowered), never on a clock: a
+  first version asserted "finishes in 30 seconds" and failed on a slow shared runner.
 - The engine is about 500 lines of pure Python that the project now owns, and it is slower than `re` on ordinary
   patterns (not noticeable at output sizes graders see).
 - Users lose back-references and look-around; the messages say so when the dataset loads.

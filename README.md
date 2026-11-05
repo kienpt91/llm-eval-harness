@@ -223,25 +223,34 @@ pipeline; reports are consistent, not signed) is [SECURITY.md](SECURITY.md).
 
 Measured with `sh scripts/verify.sh` in the pinned container, from a fresh environment installed with
 `pip install --require-hashes`, on Python 3.13.17 and on Python 3.12.15 (same results): format check, `ruff`,
-`mypy --strict` on source, tests and scripts, **945 tests passed, 2 skipped** (the skips are two tests that need `git`
+`mypy --strict` on source, tests and scripts, **955 tests passed, 2 skipped** (the skips are two tests that need `git`
 or `node`, which the slim container does not have; CI runs the git checks as shell scripts, and the history, author and
 secret checks were run with `git` on the host).
 
 | layer | tests | line coverage (3.13.17) | threshold |
 | --- | --- | --- | --- |
-| domain | 456 | 97.9% (2839 of 2900 statements) | 95% |
+| domain | 464 | 98.0% (2866 of 2923 statements) | 95% |
 | application | 87 | 99.4% (701 of 705) | 90% |
-| infrastructure | 119 | 96.0% (695 of 724); 96.1% on 3.12 | none |
+| infrastructure | 119 | 96.1% (696 of 724) | none |
 | composition | | 92.2% (178 of 193) | none |
-| overall | 947 collected | 97.5% (4416 of 4528); branch coverage 95.0% | 85% |
+| overall | 957 collected | 97.6% (4444 of 4551); branch coverage 95.1% | 85% |
 
-The other tests: 70 end to end (the real command line in process, a built wheel installed and run, the worked example,
+The other tests: 72 end to end (the real command line in process, a built wheel installed and run, the worked example,
 hostile pipelines), 154 architecture (the layer rule over the real tree plus a snippet for every rule of the lint), 60
 on the documentation, the scripts and the repository (docs against code, links, SHA-pinned workflows, no vendor names,
 the lock and wheel-selection logic, the dependency-age check against a fake index) and 1 on the version. Coverage is
 `scripts/coverage_check.py` (line coverage of the package; the user programs the adapters start are not measured; the
-infrastructure figure moves by a statement or two from run to run with timing). Properties use a seeded PRNG
+figures move by a statement or two from run to run with timing). Properties use a seeded PRNG
 (`tests/support/prng.py`).
+
+**How the suite behaves on a small or busy machine.** No test asserts an upper bound on elapsed time. Checks of *work* use
+the pattern engine's own deterministic step counter (the same pattern and text always cost the same steps; the
+budget tests lower the budget instead of waiting for it) or a CPU-time scaling ratio (four times the input may cost
+about four times the CPU, never sixteen), so a slow runner changes neither. Tests of timeouts and caps assert the
+outcome of the call (`timed_out`, the error kind, the byte count). The one wall-clock limit is pytest's
+`faulthandler_timeout` of 300 s with exit, which only ends a test that is stuck. With `PY_CPUS=2` (the CI runners have
+two CPUs) the suite takes 68 to 77 s; with four busy loops competing for those two CPUs, about 150 s; eight runs (Python
+3.13 and 3.12, plain and three times contended) all gave 955 passed, 2 skipped and the same coverage verdict.
 
 What the tests establish: the graders on their documented cases and failure modes; dataset validation messages;
 dataset and report hashing and determinism; the statistics (Fisher's exact test against known values); the gate
