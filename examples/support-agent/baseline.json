@@ -182,8 +182,8 @@
   "schema_version": 1,
   "summary": {
     "currency": "USD",
-    "latency_p50_ms": 555.377,
-    "latency_p95_ms": 877.609,
+    "latency_p50_ms": 261.006,
+    "latency_p95_ms": 383.875,
     "mean_cost_per_run": 2.894e-05,
     "mean_tokens_per_run": 106.095,
     "quality_mean_pass_rate": 0.916667,

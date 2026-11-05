@@ -37,7 +37,7 @@ SECRET_SHAPES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("payment-key", re.compile(_join(_B, "[sr]", "k_", "(?:live|test)_", r"[A-Za-z0-9]{16,255}+"))),
     ("webhook-secret", re.compile(_join(_B, "wh", "sec_", r"[A-Za-z0-9]{16,255}+"))),
     ("slack-token", re.compile(_join(_B, "xo", "x[abprs]-", r"[A-Za-z0-9-]{10,255}+"))),
-    ("google-api-key", re.compile(_join(_B, "AI", "za", r"[0-9A-Za-z_-]{35}+"))),
+    ("google-api-key", re.compile(_join(_B, "A", "Iza", r"[0-9A-Za-z_-]{35}+"))),
     ("package-registry-token", re.compile(_join(_B, "np", "m_", r"[A-Za-z0-9]{36}+"))),
     ("sk-style-key", re.compile(_join(_B, "s", "k-", r"[A-Za-z0-9_-]{32,512}+"))),
     (

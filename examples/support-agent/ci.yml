@@ -1,0 +1,53 @@
+# Copy to .github/workflows/llm-eval.yml. Every change to a prompt, a model or a retrieval step runs the golden
+# dataset before it can merge; a failing safety case (exit 4) or a quality regression (exit 1) blocks the pull request.
+name: llm-eval
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: examples/support-agent   # in your repository: the directory of llm-eval.json
+    steps:
+      # Pin every action to a full commit SHA.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      # Install the harness from a release file, verified against the SHA256SUMS of that release (replace OWNER, the
+      # version and the checksum). It has no dependencies.
+      - name: Install llm-eval-harness
+        run: |
+          curl -fsSL -o /tmp/llm_eval_harness.whl "https://github.com/OWNER/llm-eval-harness/releases/download/v0.1.0/llm_eval_harness-0.1.0-py3-none-any.whl"
+          echo "${LLM_EVAL_WHEEL_SHA256}  /tmp/llm_eval_harness.whl" | sha256sum -c -
+          pip install --no-deps /tmp/llm_eval_harness.whl
+        env:
+          LLM_EVAL_WHEEL_SHA256: ${{ vars.LLM_EVAL_WHEEL_SHA256 }}
+      # The gate runs the dataset, compares with the committed baseline.json and exits 0, 1, 2, 3 or 4.
+      # Secrets your pipeline needs are passed by name in the config (env_allow), never to the whole job step.
+      - name: Gate
+        run: llm-eval gate --markdown out/pr-comment.md
+      - name: Show the report on the pull request summary
+        if: always()
+        run: |
+          if [ -f out/pr-comment.md ]; then cat out/pr-comment.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: llm-eval-report
+          path: |
+            examples/support-agent/out/report.json
+            examples/support-agent/out/gate.json
+            examples/support-agent/out/pr-comment.md
+          if-no-files-found: ignore
+          retention-days: 14

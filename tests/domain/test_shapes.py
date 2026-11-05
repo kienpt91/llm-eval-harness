@@ -34,7 +34,7 @@ def test_remaining_prefix_shapes() -> None:
     texts = {
         "github-fine-grained-token": "github" + "_pat_" + keys.filler(40),
         "webhook-secret": "wh" + "sec_" + keys.filler(24),
-        "google-api-key": "AI" + "za" + keys.filler(35),
+        "google-api-key": "A" + "Iza" + keys.filler(35),
         "package-registry-token": "np" + "m_" + keys.filler(36),
     }
     for kind, text in texts.items():
