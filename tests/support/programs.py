@@ -135,6 +135,24 @@ open(pid_file, "w").write(str(child.pid))
 time.sleep(600)
 """
 
+# starts a helper in its OWN session (it leaves the process group) that inherits stdout and stderr, then answers and exits
+ESCAPED_HOLDER = r"""
+import json, subprocess, sys
+pid_file = sys.argv[1]
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"], start_new_session=True)
+open(pid_file, "w").write(str(child.pid))
+print(json.dumps({"text": "answered while an escaped helper holds the pipes"}))
+"""
+
+# the same, but the program itself hangs
+ESCAPED_HOLDER_HANGS = r"""
+import subprocess, sys, time
+pid_file = sys.argv[1]
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"], start_new_session=True)
+open(pid_file, "w").write(str(child.pid))
+time.sleep(600)
+"""
+
 CLOSES_STDIN_AND_ANSWERS = r"""
 import json, os, sys
 os.close(0)

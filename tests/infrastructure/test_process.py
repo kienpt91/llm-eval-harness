@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -174,3 +175,69 @@ def test_no_zombies_are_left_after_many_runs(tmp_path: Path) -> None:
         run(argv, json.dumps({"case": {"input": "x"}}).encode())
     run([*write_program(tmp_path, "orphan", programs.ORPHAN_MAKER), str(tmp_path / "pid")])
     assert zombie_children() == []
+
+
+def kill_quietly(pid_file: Path) -> None:
+    """The harness cannot kill a process that left its session: the test cleans up after itself."""
+    import signal
+
+    with contextlib.suppress(OSError, ValueError):
+        os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+
+def test_a_helper_that_left_the_session_and_holds_the_pipes_cannot_wedge_the_harness(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    started = time.monotonic()
+    try:
+        result = run([*write_program(tmp_path, "escaped", programs.ESCAPED_HOLDER), str(pid_file)], timeout_s=10.0)
+    finally:
+        kill_quietly(pid_file)
+    assert time.monotonic() - started < 8
+    assert result.returncode == 0 and not result.timed_out
+    assert json.loads(result.stdout)["text"].startswith("answered while an escaped helper")
+
+
+def test_a_hung_program_with_an_escaped_helper_still_times_out_promptly(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    started = time.monotonic()
+    try:
+        result = run(
+            [*write_program(tmp_path, "escaped-hang", programs.ESCAPED_HOLDER_HANGS), str(pid_file)], timeout_s=0.7
+        )
+    finally:
+        kill_quietly(pid_file)
+    assert result.timed_out and time.monotonic() - started < 6
+
+
+def test_the_group_is_killed_before_the_child_is_reaped_so_its_pid_cannot_be_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    real = os.killpg
+
+    def spy(pid: int, sig: int) -> None:
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except OSError:
+            state = "reaped"
+        seen.append(state)
+        real(pid, sig)
+
+    monkeypatch.setattr(os, "killpg", spy)
+    run(write_program(tmp_path, "echo", programs.ECHO), json.dumps({"case": {"input": "x"}}).encode())
+    assert seen and "reaped" not in seen, seen
+
+
+def test_the_run_still_works_when_the_program_exits_before_reading_its_input(tmp_path: Path) -> None:
+    result = run(write_program(tmp_path, "early", 'print(\'{"text": "x"}\')\n'), b"z" * 3_000_000)
+    assert result.returncode == 0 and json.loads(result.stdout) == {"text": "x"}
+
+
+def test_many_concurrent_runs_never_close_each_others_descriptors(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    argv = write_program(tmp_path, "echo", programs.ECHO)
+    body = json.dumps({"case": {"input": "x"}}).encode()
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(lambda _: run(argv, body), range(48)))
+    assert all(r.returncode == 0 and json.loads(r.stdout)["text"] == "echo: x" for r in results)

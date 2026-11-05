@@ -60,7 +60,7 @@ PURE_STDLIB = frozenset(
 # what the application layer may add: thread primitives for the concurrency-limited runner
 APPLICATION_EXTRA = frozenset({"concurrent.futures", "threading"})
 
-PROCESS_MODULES = frozenset({"subprocess", "multiprocessing", "pty"})
+PROCESS_MODULES = frozenset({"subprocess", "multiprocessing", "pty", "selectors", "select"})
 NETWORK_MODULES = frozenset(
     {
         "socket",
@@ -73,7 +73,6 @@ NETWORK_MODULES = frozenset(
         "smtplib",
         "asyncio",
         "xmlrpc",
-        "selectors",
     }
 )
 UNSAFE_MODULES = frozenset({"pickle", "marshal", "shelve", "ctypes", "importlib", "code", "codeop", "runpy", "imp"})
