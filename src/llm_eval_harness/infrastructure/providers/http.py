@@ -2,15 +2,20 @@
 
 The only module with network access. The endpoint must be on the loopback interface or be named explicitly in
 ``allow_hosts`` (and then must use https). Redirects are never followed, credentials in the URL are refused,
-the whole exchange has one deadline, and the response is read up to a fixed number of bytes.
+the whole exchange (connect, request, response headers and body) has one deadline enforced by a watchdog that shuts
+the socket down, and the response is read up to a fixed number of bytes. Name resolution is the one step that
+cannot be interrupted; it only concerns loopback names and the hosts you listed.
 """
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import ipaddress
 import json
+import socket
 import ssl
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -116,7 +121,23 @@ class HttpProvider:
         else:
             connection = http.client.HTTPConnection(e.connect_host, e.port, timeout=timeout_s)
         response: http.client.HTTPResponse | None = None
+        expired = threading.Event()
+
+        def abort() -> None:
+            """The deadline of the whole exchange: shut the socket down so whatever is reading it wakes up."""
+            expired.set()
+            sock = connection.sock
+            if sock is not None:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+
+        watchdog = threading.Timer(timeout_s, abort)
+        watchdog.daemon = True
+        watchdog.start()
         try:
+            connection.connect()  # name resolution cannot be interrupted: hosts are loopback or ones you listed
+            if expired.is_set():
+                raise TimeoutError
             connection.request("POST", e.target, body=body, headers=headers)
             response = connection.getresponse()
             status = response.status
@@ -126,8 +147,13 @@ class HttpProvider:
                 "timeout", f"no answer from the endpoint within {timeout_s:g}s", retryable=True
             ) from None
         except (OSError, http.client.HTTPException) as error:
+            if expired.is_set():  # the watchdog cut the connection: that is the deadline, not a network fault
+                raise ProviderError(
+                    "timeout", f"no answer from the endpoint within {timeout_s:g}s", retryable=True
+                ) from None
             raise ProviderError("network", f"request failed: {type(error).__name__}", retryable=True) from None
         finally:
+            watchdog.cancel()
             if response is not None:
                 response.close()  # a `Connection: close` answer keeps its own handle on the socket
             connection.close()

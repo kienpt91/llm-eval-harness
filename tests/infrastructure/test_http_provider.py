@@ -205,3 +205,21 @@ def test_the_allow_list_is_exact_not_a_suffix_match() -> None:
         parse_endpoint("https://evil-api.example.org/x", ("api.example.org",))
     with pytest.raises(UsageError):
         parse_endpoint("https://api.example.org.evil.net/x", ("api.example.org",))
+
+
+def test_a_server_that_drips_response_headers_hits_the_deadline_of_the_whole_exchange() -> None:
+    with serve() as server:
+        started = time.monotonic()
+        error = fails(provider(server, "/hdrdrip"), timeout_s=0.6)
+        assert error.kind == "timeout" and error.retryable, str(error)
+        assert time.monotonic() - started < 3, "the deadline covers the headers too, not only the body"
+
+
+def test_the_deadline_is_one_for_connect_send_headers_and_body_together() -> None:
+    with serve() as server:
+        server.hang_seconds = 4.0
+        started = time.monotonic()
+        error = fails(provider(server, "/slow-accept"), timeout_s=0.5)
+        assert error.kind == "timeout" and time.monotonic() - started < 3
+        for path in ("/ok", "/echo"):  # and a healthy exchange is not cut short
+            assert provider(server, path).generate(request(), 5.0).text

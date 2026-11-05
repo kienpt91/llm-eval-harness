@@ -64,6 +64,18 @@ class Handler(BaseHTTPRequestHandler):
                     time.sleep(0.05)
             except OSError:
                 return
+        elif route == "/hdrdrip":
+            # a valid response whose header block never ends: one header line every 150 ms
+            try:
+                self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+                for n in range(90):
+                    self.wfile.write(f"X-Drip-{n}: x\r\n".encode())
+                    self.wfile.flush()
+                    time.sleep(0.15)
+            except OSError:
+                return
+        elif route == "/slow-accept":
+            time.sleep(self.server.hang_seconds)
         elif route == "/invalid":
             self._send(200, b"{nope")
         elif route == "/binary":
