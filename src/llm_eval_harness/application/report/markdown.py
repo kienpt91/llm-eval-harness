@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from llm_eval_harness.application.report.format import millis, money, rate, safe, signed, signed_percent
+from llm_eval_harness.application.report.format import millis, money, rate, safe, short_hash, signed, signed_percent
 from llm_eval_harness.domain.compare import IMPROVED, INCONCLUSIVE, Comparison, worst_regressions
 from llm_eval_harness.domain.gate import GateDecision
 from llm_eval_harness.domain.reportdoc import CaseDoc, ReportDoc, RunDoc
@@ -70,7 +70,7 @@ def render_markdown(doc: ReportDoc, comparison: Comparison | None = None, decisi
     out += [
         "",
         "<sub>"
-        + f"dataset {_cell(doc.dataset_source)} {_cell(doc.dataset_hash, 24)}; {doc.summary.cases} of {doc.total_cases} cases; "
+        + f"dataset {_cell(doc.dataset_source)} {_cell(short_hash(doc.dataset_hash))}; {doc.summary.cases} of {doc.total_cases} cases; "
         + f"repeat {doc.repeat}, concurrency {doc.concurrency}, retries {doc.retries}"
         + (f", seed {doc.seed}" if doc.seed is not None else "")
         + f"; harness {_cell(doc.tool_version, 20)}</sub>",

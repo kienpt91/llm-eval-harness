@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from llm_eval_harness.application.report.format import millis, money, plural, rate, safe, signed, signed_percent
+from llm_eval_harness.application.report.format import (
+    millis,
+    money,
+    plural,
+    rate,
+    safe,
+    short_hash,
+    signed,
+    signed_percent,
+)
 from llm_eval_harness.domain.compare import IMPROVED, INCONCLUSIVE, Comparison, worst_regressions
 from llm_eval_harness.domain.gate import GateDecision
 from llm_eval_harness.domain.reportdoc import CaseDoc, ReportDoc
@@ -19,7 +28,7 @@ def render_terminal(doc: ReportDoc, comparison: Comparison | None = None, decisi
     s = doc.summary
     lines = [
         "llm-eval report",
-        f"  dataset   {safe(doc.dataset_source)}  {safe(doc.dataset_hash, 24)}  ({s.cases} of {doc.total_cases} cases)",
+        f"  dataset   {safe(doc.dataset_source)}  {short_hash(doc.dataset_hash)}  ({s.cases} of {doc.total_cases} cases)",
         f"  provider  {_provider(doc)}",
         f"  run       repeat {doc.repeat}, concurrency {doc.concurrency}, retries {doc.retries}"
         + (f", seed {doc.seed}" if doc.seed is not None else "")

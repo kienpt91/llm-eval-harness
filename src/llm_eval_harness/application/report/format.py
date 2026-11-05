@@ -39,3 +39,9 @@ def signed(value: float | None, digits: int = 3) -> str:
 
 def plural(n: int, noun: str) -> str:
     return f"{n} {noun}" + ("" if n == 1 else "s")
+
+
+def short_hash(value: str) -> str:
+    """``sha256:`` plus the first 12 hex digits, enough to tell datasets apart on screen."""
+    clean = safe(value, 200)
+    return clean if len(clean) <= 19 else clean[:19] + "…"
