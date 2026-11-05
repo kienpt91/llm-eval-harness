@@ -4,6 +4,7 @@ import pytest
 
 from llm_eval_harness.domain.jsonio import (
     JsonParseError,
+    JsonValue,
     canonical,
     contains_json,
     json_equal,
@@ -71,7 +72,8 @@ def test_canonical_is_stable_under_key_order() -> None:
 
 
 def test_kind_of() -> None:
-    assert [kind_of(v) for v in (None, True, 1, 1.5, "s", [], {})] == [
+    values: list[object] = [None, True, 1, 1.5, "s", [], {}]
+    assert [kind_of(v) for v in values] == [
         "null",
         "boolean",
         "number",
@@ -99,7 +101,7 @@ def test_json_equal_respects_json_types() -> None:
 def test_property_canonical_roundtrip_and_equality() -> None:
     for seed in range(200):
         rng = Prng(seed)
-        value = {
+        value: dict[str, JsonValue] = {
             rng.word(): [rng.integer(-5, 5), rng.text(10), {rng.word(): rng.real(-1, 1)}]
             for _ in range(rng.integer(0, 4))
         }
