@@ -18,7 +18,7 @@ from llm_eval_harness.application.redaction import Redactor, bounded_json
 from llm_eval_harness.domain.errors import ProviderError
 from llm_eval_harness.domain.jsonio import JsonValue, canonical
 from llm_eval_harness.domain.limits import MAX_MESSAGE_CHARS, STORED_OUTPUT_CHARS
-from llm_eval_harness.domain.model import Case, GraderSpec, ProviderOutput, ToolCall
+from llm_eval_harness.domain.model import Case, GraderSpec, ProviderOutput, ToolCall, Usage
 from llm_eval_harness.domain.plan import combine, plan_graders
 from llm_eval_harness.domain.pricing import EMPTY_TABLE, PriceTable, cost_of
 from llm_eval_harness.domain.protocol import build_request
@@ -137,7 +137,13 @@ def _store(output: ProviderOutput, cost: Decimal | None, redactor: Redactor) -> 
         tool_calls=calls,
         citations=tuple(redactor.text(c) for c in output.citations),
         retrieved=tuple(redactor.text(c) for c in output.retrieved),
-        usage=output.usage,
+        usage=None
+        if output.usage is None
+        else Usage(
+            None if output.usage.model is None else redactor.text(output.usage.model),
+            output.usage.input_tokens,
+            output.usage.output_tokens,
+        ),
         latency_ms=output.latency_ms,
         cost_usd=cost,
     )

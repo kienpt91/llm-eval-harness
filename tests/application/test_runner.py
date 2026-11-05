@@ -244,3 +244,38 @@ def test_error_messages_are_single_line_and_redacted() -> None:
     [result] = run([case("a", expected=FACT)], ScriptedProvider({"a": [boom]}))
     message = result.runs[0].error.message  # type: ignore[union-attr]
     assert "\n" not in message and "\x1b" not in message and token not in message
+
+
+def test_grader_details_never_carry_secret_shaped_text_into_the_report() -> None:
+    token = keys.github_token()
+    exact = case("a", graders=(spec("exact", {"answers": ["nope"]}),))
+    [result] = run([exact], ScriptedProvider({}, default=output(token)))
+    detail = result.runs[0].grades[0].detail
+    assert result.runs[0].status == "failed" and token not in detail and "[REDACTED:github-token]" in detail
+    grounded = case("g", graders=(spec("grounding", {}),))
+    [g] = run([grounded], ScriptedProvider({}, default=output("x", citations=(token,))))
+    assert token not in repr(g.runs[0].grades)
+
+
+def test_the_reported_model_name_is_redacted_but_cost_still_uses_the_real_name() -> None:
+    token = keys.github_token()
+    prices = parse_price_table(js({"models": {token: {"input_per_mtok": 1000, "output_per_mtok": 1000}}}), "p")
+    [result] = run(
+        [case("a", expected=FACT)],
+        ScriptedProvider({}, default=output("30 days", usage=Usage(token, 1000, 0))),
+        prices=prices,
+    )
+    stored = result.runs[0].output
+    assert stored is not None and stored.usage is not None and token not in (stored.usage.model or "")
+    assert stored.cost_usd == Decimal(1)
+
+
+def test_redaction_looks_at_most_at_the_first_32k_characters_of_any_string_and_says_so() -> None:
+    from llm_eval_harness.application.redaction import Redactor
+
+    r = Redactor()
+    token = keys.github_token()
+    out = r.text("a" * 40_000 + token)
+    assert token not in out and len(out) < 33_000 and "more characters" in out
+    stored = r.json({"k": "b" * 40_000})
+    assert isinstance(stored, dict) and str(stored["k"]).endswith("more characters]")

@@ -28,3 +28,6 @@ STORED_OUTPUT_CHARS = 20_000
 MAX_REGEX_INPUT_CHARS = 32 * 1024
 """Longest text a user-supplied regular expression is run on. Python's ``re`` cannot be interrupted, and even a
 screened pattern can be quadratic on adversarial text, so longer text FAILS the grader instead of being scanned."""
+MAX_REDACT_CHARS = 32 * 1024
+"""Longest string the redactor looks at. Anything beyond is not stored: it is replaced by a count. Stored output is
+cut at ``STORED_OUTPUT_CHARS`` anyway, and every pattern that runs on it therefore works on bounded text."""

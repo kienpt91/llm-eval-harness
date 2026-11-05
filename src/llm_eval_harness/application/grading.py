@@ -41,13 +41,14 @@ def grade_output(
             outcome = evaluate(spec, ctx)
         except Exception as error:  # a bug in a grader must fail the grade, never pass it or stop the run
             outcome = Outcome(False, 0.0, f"grader crashed ({type(error).__name__}); counted as failed")
-        results.append(_result(spec, outcome, deterministic=GRADERS[spec.type].deterministic))
+        results.append(_result(spec, outcome, redactor, deterministic=GRADERS[spec.type].deterministic))
     return results
 
 
 def _result(
     spec: GraderSpec,
     outcome: Outcome,
+    redactor: Redactor,
     *,
     deterministic: bool,
     confidence: float | None = None,
@@ -60,7 +61,7 @@ def _result(
         score=min(1.0, max(0.0, outcome.score)),
         weight=spec.weight,
         must=spec.must,
-        detail=truncate(outcome.detail, MAX_MESSAGE_CHARS),
+        detail=truncate(redactor.text(outcome.detail), MAX_MESSAGE_CHARS),  # redact first, then cut
         deterministic=deterministic,
         confidence=confidence,
         verdict=verdict,
@@ -95,5 +96,4 @@ def _judge(
     except ValueError as error:
         raise ProviderError("protocol", f"judge program: {error}", retryable=False) from None
     outcome = judge_outcome(config, verdict)
-    scrubbed = Outcome(outcome.passed, outcome.score, redactor.text(outcome.detail))
-    return _result(spec, scrubbed, deterministic=False, confidence=verdict.confidence, verdict=verdict.verdict)
+    return _result(spec, outcome, redactor, deterministic=False, confidence=verdict.confidence, verdict=verdict.verdict)
