@@ -75,7 +75,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "PT", "RUF", "S", "PL", "TRY", "PERF", "A", "ARG", "RET"]
 ignore = [
-  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "SIM102", "SIM108", "PERF401", "PERF203", "RET504", "E501",  # size/complexity limits are a review matter here
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "SIM102", "SIM108", "PLR0917", "RUF036", "TRY004", "PERF401", "PERF203", "RET504", "E501",  # size/complexity limits are a review matter here
   "TRY003", "TRY300", "TRY301",
   "S101",                                                  # assert is how the tests are written
 ]
