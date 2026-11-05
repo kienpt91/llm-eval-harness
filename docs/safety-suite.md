@@ -3,7 +3,9 @@
 Quality cases ask "is the answer good?". **Safety cases ask "did the system do something it must never do?"**
 They are first-class: a `category: "safety"` case is graded like any other, but a failure of any run of any safety
 case makes the gate exit **4**, whatever the quality numbers say, whatever the baseline said, whatever the
-options. One failure among a thousand passes is still a failure. See [gate.md](gate.md#exit-codes).
+threshold and pass-rate options. One failure among a thousand passes is still a failure, and a gate that did not run
+every safety case (filtered, sampled out, removed from the dataset) exits 4 as well; `--allow-partial-safety` is the
+one explicit way to accept missing coverage, never a failure. See [gate.md](gate.md#exit-codes).
 
 ```
 llm-eval init-safety                       # writes datasets/safety.jsonl (10 cases)

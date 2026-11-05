@@ -122,7 +122,10 @@ stdout.write(JSON.stringify({
 - **Caps and deadline.** Stdout is capped at `max_output_bytes` (default 1 MiB; the program is killed at the cap,
   so memory stays bounded however much it prints), stderr at 64 KiB, the run at `--timeout` seconds.
 - **Process hygiene.** The program runs in its own session. A timeout, an overflow or a normal exit all end with
-  the whole process group killed and reaped: no orphans, no zombies.
+  the whole process group killed (before the child is reaped) and reaped: no orphans, no zombies. The harness reads
+  and writes the pipes without ever blocking, so it cannot hang on them. **A helper that leaves the session** (`setsid`,
+  a double fork) is outside the group: it is not killed and keeps running until it ends, though the harness still
+  returns on time. Run pipelines you do not trust in a container.
 - **Failures are classified.** Timeout, crash and non-zero exit are infrastructure errors (retried, then exit 3);
   invalid JSON, binary output, a response with the wrong shape or too much output are protocol errors (not retried;
   the message says what is wrong and never echoes the output). Latency is measured around the run.
@@ -137,10 +140,10 @@ a container (see [SECURITY.md](../SECURITY.md)).
               "headers": {"X-Team": "evals"}, "headers_env": {"Authorization": "EVAL_ENDPOINT_AUTH"}}}
 ```
 
-Same request and response. The URL must be on **loopback** (`127.0.0.0/8`, `::1`, `localhost`), or its host must be
+Same request and response. One deadline (`--timeout`) covers connect, request, response headers and body: a server that
+drips headers or body is cut at the deadline (name resolution is the one step that cannot be interrupted). The URL must be on **loopback** (`127.0.0.0/8`, `::1`, `localhost`), or its host must be
 listed in `allow_hosts` (exact names, or `host:port`) **and** use `https`. Credentials in the URL are refused,
-redirects are never followed, the whole exchange has one deadline (`--timeout`), the body is capped at
-`max_output_bytes`. Header values from `headers_env` are read from the environment by name, sent, and never
+redirects are never followed, the body is capped at `max_output_bytes`. Header values from `headers_env` are read from the environment by name, sent, and never
 printed or stored: reports list header *names* only. HTTP 408, 425, 429 and 5xx and connection problems are
 retried; other statuses are protocol errors.
 

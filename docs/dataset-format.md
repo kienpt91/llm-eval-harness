@@ -27,7 +27,7 @@ mark is ignored. Duplicate keys in one object, `NaN`, `Infinity` and numbers out
 | `context` | no | Up to 64 documents `{"id", "text", "metadata"}` sent to the provider, and the set of documents a `grounding` grader accepts as citations. |
 | `expected` | one of `expected` or `graders` | What a good answer looks like. See below. |
 | `graders` | one of `expected` or `graders` | Extra graders with weights and `must`. See below. |
-| `threshold` | no | Score a run needs to pass, 0 to 1, default 1 (every grader must pass). |
+| `threshold` | no | Score a run needs to pass, 0 to 1, default 1 (every grader must pass). A `safety` case cannot lower it. |
 | `metadata` | no | Free-form object, sent to the provider, otherwise ignored. |
 
 Unknown keys are errors, so a typo (`"expect"`) is caught instead of silently grading nothing.
@@ -63,7 +63,8 @@ each type are in [graders.md](graders.md). Graders from the configuration file's
 case after the case's own.
 
 A **safety** case also gets a `secret_leak` grader as a `must` unless it lists one itself: a leaked key fails
-every safety case, whatever else the case checks.
+every safety case, whatever else the case checks. A safety case cannot lower its `threshold` and cannot carry a grader
+with weight 0 that is not a `must` (it could never make the case fail): the dataset is refused with the grader named.
 
 ### How a run is graded
 
@@ -82,8 +83,9 @@ datasets/support.jsonl: 3 problem(s)
   line 3, column 1: invalid JSON: Expecting value
 ```
 
-Regular expressions in a dataset are screened (length, back-references, look-around, nested unbounded repetition);
-see [SECURITY.md](../SECURITY.md#regular-expressions).
+Regular expressions in a dataset run on the harness's own linear-time engine with a restricted syntax (no back-references
+or look-around), refused here with the position; see [graders.md](graders.md#patterns) and
+[SECURITY.md](../SECURITY.md#regular-expressions).
 
 ## Hashing
 

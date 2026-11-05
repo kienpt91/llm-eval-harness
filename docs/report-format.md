@@ -14,7 +14,7 @@ schema_version  1
 kind            "llm-eval-report"
 tool            {name, version}
 started_at, finished_at   UTC ISO 8601
-dataset         {source, hash, total_cases, selected_cases}
+dataset         {source, hash, total_cases, selected_cases, safety_not_run [ids, at most 1000], safety_not_run_count}
 run             {repeat, seed, sample, tags, categories, concurrency, retries, redacted}
 provider        a short, secret-free description: {type, program, arguments} | {type, host, scheme, headers} | {type, model}
 summary         {cases, runs, graded_runs, errored_runs,
@@ -41,6 +41,23 @@ cases[]         {id, category, tags, case_hash, input, status, graded_runs, pass
   always saw the whole answer. Tool arguments are redacted and bounded. `input` is the case input as compact JSON,
   redacted, cut at 2,000 characters.
 - Judge grades have `deterministic: false` plus the judge's `confidence` and `verdict`.
+- `dataset.safety_not_run` lists the safety cases of the dataset that this run left out (filtered or sampled out); the gate
+  exits 4 unless it is empty or `--allow-partial-safety` is given.
+- Every stored string is redacted and, beyond 32,768 characters, replaced by a count. Grader `detail` strings are
+  redacted too (they can quote the answer).
+
+## Validation
+
+A report (and a baseline) is read as untrusted. Beyond field types, the reader refuses a report that contradicts itself,
+naming the field: per case, `graded_runs`, `passes`, `errors` and `status` must equal what its `runs` show; run `status`
+is `passed`, `failed` or `error`, `error` exactly when there is an error record and no output, `score` between 0 and 1;
+the `summary` (cases, runs, graded and errored runs, safety failures, flaky cases, tokens, unpriced runs, mean pass rate,
+total cost, latency percentiles) must equal what the cases and runs give; case ids must be valid (`letters, digits . _ : / -`)
+and unique; categories are `quality` or `safety`; no case has more than 1,000 runs; `dataset.selected_cases` must equal
+the number of cases. Baselines are bounded the same way (counts within 0 to 1,000, `passes <= graded_runs`) before any
+statistic runs. This is consistency, not authenticity: nothing signs a report.
+
+Files are created with mode 0600.
 
 ## `baseline.json` (`"kind": "llm-eval-baseline"`)
 

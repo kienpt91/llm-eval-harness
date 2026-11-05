@@ -16,7 +16,7 @@ are relative to the project directory (`--root`, default: the current directory)
   "redact": {"enabled": true, "patterns": ["ORD-\\d{4,}"]},
   "gate": {"min_pass_rate": 0.9, "on_inconclusive": "fail", "tolerance": 0.0, "alpha": 0.05,
            "deterministic": false, "max_regressed_cases": 0, "max_cost_increase_pct": 20,
-           "fail_on_removed": false}
+           "fail_on_removed": false, "allow_partial_safety": false}
 }
 ```
 
@@ -37,7 +37,7 @@ Unknown keys are errors. Every problem in the file is reported with its path (`g
 | `graders` | none | graders added to **every** case (same syntax as a case's `graders`) |
 | `redact.enabled` | true | redact secret-shaped strings in stored reports (`--no-redact` switches it off) |
 | `redact.patterns` | none | extra regular expressions to redact (screened like all patterns) |
-| `gate.*` | see [gate.md](gate.md) | defaults of the gate and compare options |
+| `gate.*` | see [gate.md](gate.md) | defaults of the gate and compare options (`allow_partial_safety` accepts a run that left safety cases out; default false) |
 
 ## `provider`
 
