@@ -65,13 +65,13 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 return
         elif route == "/hdrdrip":
-            # a valid response whose header block never ends: one header line every 150 ms
+            # a valid response whose header block is dripped for 9.5 s: one header line every 100 ms
             try:
                 self.wfile.write(b"HTTP/1.1 200 OK\r\n")
-                for n in range(90):
+                for n in range(95):  # fewer than http.client's limit of 100 header lines
                     self.wfile.write(f"X-Drip-{n}: x\r\n".encode())
                     self.wfile.flush()
-                    time.sleep(0.15)
+                    time.sleep(0.1)
             except OSError:
                 return
         elif route == "/slow-accept":

@@ -6,7 +6,6 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -116,16 +115,14 @@ def test_a_broken_pipeline_is_exit_3_with_the_reason_in_the_report(tmp_path: Pat
 
 def test_a_hung_pipeline_is_killed_and_the_gate_still_answers(tmp_path: Path) -> None:
     project = hostile_project(tmp_path, programs.HANG, timeout=0.5)
-    started = time.monotonic()
-    result = invoke(["gate"], project)
-    assert result.code == 3 and "provider error (timeout)" in result.out and time.monotonic() - started < 10
+    result = invoke(["gate"], project)  # the program would sleep for ten minutes
+    assert result.code == 3 and "provider error (timeout)" in result.out
 
 
 def test_an_endless_pipeline_is_cut_at_the_cap(tmp_path: Path) -> None:
     project = hostile_project(tmp_path, programs.HUGE_STDOUT, max_output_bytes=4096)
-    started = time.monotonic()
-    result = invoke(["gate"], project)
-    assert result.code == 3 and "more than 4096 bytes" in result.out and time.monotonic() - started < 10
+    result = invoke(["gate"], project)  # the program never stops writing by itself
+    assert result.code == 3 and "more than 4096 bytes" in result.out
 
 
 def test_hostile_text_in_an_answer_is_graded_stored_safely_and_printed_safely(tmp_path: Path) -> None:

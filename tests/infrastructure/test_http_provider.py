@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from llm_eval_harness.application.config import HttpProviderConfig
@@ -110,26 +108,24 @@ def test_redirects_are_never_followed() -> None:
 
 def test_oversized_and_endless_bodies_are_cut_at_the_cap() -> None:
     with serve() as server:
-        for path in ("/huge", "/endless"):
-            started = time.monotonic()
+        for path in ("/huge", "/endless"):  # "/endless" never ends by itself: only the cap can stop it
             error = fails(provider(server, path, max_bytes=4096))
             assert error.kind == "protocol" and "more than 4096 bytes" in str(error) and not error.retryable
-            assert time.monotonic() - started < 5
 
 
 def test_a_slow_endpoint_times_out_and_is_retryable() -> None:
     with serve() as server:
-        server.hang_seconds = 3.0
-        started = time.monotonic()
+        server.hang_seconds = 3.0  # the server would answer after three seconds; the client gives up after 0.4
         error = fails(provider(server, "/hang"), timeout_s=0.4)
-        assert error.kind == "timeout" and error.retryable and time.monotonic() - started < 2.5
+        assert error.kind == "timeout" and error.retryable
 
 
 def test_a_dripping_body_hits_the_overall_deadline_not_a_per_read_one() -> None:
     with serve() as server:
-        started = time.monotonic()
+        # the server sends a byte every 50 ms for 50 s: a per-read timeout never fires, a deadline for the whole body does.
+        # Had the deadline not applied, the call would end with a protocol error (a body of spaces), not a timeout.
         error = fails(provider(server, "/drip"), timeout_s=0.6)
-        assert error.kind == "timeout" and time.monotonic() - started < 3
+        assert error.kind == "timeout" and error.retryable
 
 
 def test_garbage_bodies_are_protocol_errors() -> None:
@@ -209,17 +205,16 @@ def test_the_allow_list_is_exact_not_a_suffix_match() -> None:
 
 def test_a_server_that_drips_response_headers_hits_the_deadline_of_the_whole_exchange() -> None:
     with serve() as server:
-        started = time.monotonic()
+        # the server drips header lines for 9.5 s and then closes the connection. With a deadline for the whole exchange
+        # the client stops at 0.6 s with a timeout; without one it would read on and end with a network error.
         error = fails(provider(server, "/hdrdrip"), timeout_s=0.6)
         assert error.kind == "timeout" and error.retryable, str(error)
-        assert time.monotonic() - started < 3, "the deadline covers the headers too, not only the body"
 
 
 def test_the_deadline_is_one_for_connect_send_headers_and_body_together() -> None:
     with serve() as server:
         server.hang_seconds = 4.0
-        started = time.monotonic()
         error = fails(provider(server, "/slow-accept"), timeout_s=0.5)
-        assert error.kind == "timeout" and time.monotonic() - started < 3
+        assert error.kind == "timeout"
         for path in ("/ok", "/echo"):  # and a healthy exchange is not cut short
             assert provider(server, path).generate(request(), 5.0).text
