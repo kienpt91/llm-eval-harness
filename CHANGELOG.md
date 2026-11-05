@@ -25,9 +25,17 @@ First release.
 - `gate`: exit 0 pass, 1 quality regression, 2 usage error, 3 provider or infrastructure error, 4 safety failure
   (always fatal, never averaged away).
 - `init-safety`: a starter dataset of prompt injection, data exfiltration and unauthorised tool call cases.
-- Security: output sanitised for terminals and Markdown, ASCII-only JSON files, secret-shaped strings redacted
-  before storing, bounded reads, screened regular expressions, no path or symlink escapes, no network except the
-  `http` provider, explicit environment allow-list, nothing ever executed from model output.
+- Security: output sanitised for terminals; the pull request Markdown puts every untrusted value in an inert code span;
+  ASCII-only JSON files created with mode 0600; secret-shaped strings redacted at every stored sink, through Unicode
+  obfuscation, whole PEM blocks and long tokens; leak graders scan every reported field without a size cap; bounded
+  reads; user regular expressions on a linear-time engine with a work budget that fails closed; child pipes handled
+  without threads or blocking calls, the group killed before reaping, a deadline for the whole http exchange; no path or
+  symlink escapes; no network except the `http` provider; explicit environment allow-list; nothing ever executed from
+  model output.
+- Gate integrity: a safety case that was not run (filtered, sampled out, removed, recategorised) is exit 4 unless
+  `--allow-partial-safety`; safety cases cannot lower their threshold; failing new or changed quality cases fail the
+  gate; a cost limit with unknown cost fails; reports and baselines are validated and cross-checked and a report for a
+  different dataset is refused as stale; flags are held to the configuration's ranges.
 - Example `examples/support-agent`: a retrieval pipeline with tools, quality and safety cases, a baseline, a CI
   workflow; the demo shows a change that improves quality while making one safety case fail, and the gate exiting 4.
 - Zero runtime dependencies. Python 3.12 and 3.13. Development tools pinned by hash, container pinned by digest.
