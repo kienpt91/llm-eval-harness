@@ -1,4 +1,12 @@
-"""The Markdown report for a pull request: what regressed, what improved, the worst cases, cost and latency deltas."""
+"""The Markdown report for a pull request: what regressed, what improved, the worst cases, cost and latency deltas.
+
+Rule: nothing that came from a model, a program under test, a dataset, a configuration or a report file is ever
+placed in the Markdown as plain text. Every such value goes into an inline code span (or, for outputs, a fenced
+block) whose delimiter is longer than any run of backticks inside it, after the value was made a single line without
+control, bidirectional or invisible characters. Inside a code span a renderer does not make links, images, HTML,
+``@mentions``, ``#123`` references or autolinks, whatever the text says. The report has no HTML of its own and no
+links. Text that the harness itself writes (headings, labels, fixed sentences) is plain.
+"""
 
 from __future__ import annotations
 
@@ -6,19 +14,28 @@ from llm_eval_harness.application.report.format import millis, money, rate, safe
 from llm_eval_harness.domain.compare import IMPROVED, INCONCLUSIVE, Comparison, worst_regressions
 from llm_eval_harness.domain.gate import GateDecision
 from llm_eval_harness.domain.reportdoc import CaseDoc, ReportDoc, RunDoc
-from llm_eval_harness.domain.text import fence_for, sanitize
+from llm_eval_harness.domain.text import fence_for, longest_backtick_run, sanitize
 
 WORST_CASES = 5
 LISTED = 15
 EXCERPT = 700
 
 
+def _span(value: str, max_chars: int = 160, *, table: bool = False) -> str:
+    """One untrusted value as an inline code span. In a table cell, pipes are escaped (``\\|``)."""
+    text = safe(value, max_chars)
+    ticks = "`" * (longest_backtick_run(text) + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") or not text else ""
+    span = f"{ticks}{pad}{text}{pad}{ticks}"
+    return span.replace("|", "\\|") if table else span
+
+
 def _cell(value: str, max_chars: int = 160) -> str:
-    return safe(value, max_chars).replace("|", "\\|").replace("`", "'")
+    return _span(value, max_chars, table=True)
 
 
 def _code(value: str) -> str:
-    return f"`{_cell(value, 100)}`"
+    return _span(value, 100, table=True)
 
 
 def _block(value: str, max_chars: int = EXCERPT) -> list[str]:
@@ -33,8 +50,8 @@ def render_markdown(doc: ReportDoc, comparison: Comparison | None = None, decisi
         status = "PASSED" if decision.passed else "FAILED"
         out.append(f"## LLM eval: {status} (exit {decision.exit_code})")
         out.append("")
-        out.append(_cell(decision.verdict, 300))
-        out.extend(f"- {_cell(reason, 400)}" for reason in decision.reasons)
+        out.append(decision.verdict)
+        out.extend(f"- {_span(reason, 400)}" for reason in decision.reasons)
     elif comparison is not None:
         out.append(f"## LLM eval: {comparison.verdict}")
     else:
@@ -67,20 +84,17 @@ def render_markdown(doc: ReportDoc, comparison: Comparison | None = None, decisi
             f"| {_code(c.stat.id)} | {rate(c.stat.pass_rate)} | {c.stat.passes}/{c.stat.graded_runs} | {c.stat.score_variance:.3f} |"
             for c in flaky[:LISTED]
         )
+    seed = f", seed {doc.seed}" if doc.seed is not None else ""
     out += [
         "",
-        "<sub>"
-        + f"dataset {_cell(doc.dataset_source)} {_cell(short_hash(doc.dataset_hash))}; {doc.summary.cases} of {doc.total_cases} cases; "
-        + f"repeat {doc.repeat}, concurrency {doc.concurrency}, retries {doc.retries}"
-        + (f", seed {doc.seed}" if doc.seed is not None else "")
-        + f"; harness {_cell(doc.tool_version, 20)}</sub>",
+        f"Dataset {_span(doc.dataset_source)} {_span(short_hash(doc.dataset_hash))}: {doc.summary.cases} of {doc.total_cases} cases; "
+        f"repeat {doc.repeat}, concurrency {doc.concurrency}, retries {doc.retries}{seed}; harness {_span(doc.tool_version, 20)}",
     ]
     return "\n".join(out) + "\n"
 
 
 def _summary_table(doc: ReportDoc, c: Comparison | None) -> list[str]:
     s = doc.summary
-    cost = money(s.mean_cost_per_run, doc.currency)
     rows: list[tuple[str, str, str, str]] = [
         (
             "Quality (mean pass rate)",
@@ -92,8 +106,8 @@ def _summary_table(doc: ReportDoc, c: Comparison | None) -> list[str]:
         ("Errored runs", "", str(s.errored_runs), ""),
         (
             "Cost per run",
-            money(c.cost_per_run.baseline, c.currency) if c else "",
-            cost,
+            _cell(money(c.cost_per_run.baseline, c.currency)) if c else "",
+            _cell(money(s.mean_cost_per_run, doc.currency)),
             signed_percent(c.cost_per_run) if c else "",
         ),
         (
@@ -135,7 +149,7 @@ def _comparison_sections(c: Comparison) -> list[str]:
             out.append(f"| ... | | {len(cases) - LISTED} more |")
     if c.notes or c.dataset_changed:
         out += [""]
-        out.extend(f"> {_cell(n, 300)}" for n in c.notes)
+        out.extend(f"> {_span(n, 300)}" for n in c.notes)
         if c.dataset_changed:
             out.append("> The dataset hash differs from the baseline's.")
     return out
@@ -143,22 +157,24 @@ def _comparison_sections(c: Comparison) -> list[str]:
 
 def _case_section(case: CaseDoc) -> list[str]:
     stat = case.stat
-    out = [f"#### {_code(stat.id)} ({_cell(stat.category)}): {stat.passes}/{stat.graded_runs} runs passed", ""]
+    out = [f"#### {_span(stat.id, 100)} ({_span(stat.category, 20)}): {stat.passes}/{stat.graded_runs} runs passed", ""]
     run = _worst_run(case)
     out.append("Input:")
     out += _block(case.input)
     if run is not None:
         if run.error is not None:
-            out.append(f"Provider error ({_cell(run.error[0], 20)}): {_cell(run.error[1], 300)}")
+            out.append(f"Provider error ({_span(run.error[0], 20)}): {_span(run.error[1], 300)}")
         else:
             out.append("Output:")
             out += _block(run.text or "")
             if run.tool_calls:
-                out.append("Tool calls: " + ", ".join(_code(f"{n}({a})") for n, a in run.tool_calls[:8]))
+                out.append("Tool calls: " + ", ".join(_span(f"{n}({a})", 100) for n, a in run.tool_calls[:8]))
         failed = [g for g in run.grades if not g.passed]
         if failed:
             out.append("")
-            out.extend(f"- {'**must** ' if g.must else ''}{_code(g.name)}: {_cell(g.detail, 300)}" for g in failed[:8])
+            out.extend(
+                f"- {'**must** ' if g.must else ''}{_span(g.name, 100)}: {_span(g.detail, 300)}" for g in failed[:8]
+            )
     out.append("")
     return out
 

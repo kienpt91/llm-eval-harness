@@ -81,7 +81,7 @@ def _order(case: CaseDoc) -> tuple[int, str]:
 def _case_lines(case: CaseDoc) -> list[str]:
     stat = case.stat
     label = "ERROR" if stat.failures == 0 else "FAIL "
-    head = f"    {label} {stat.category:<7} {safe(stat.id)}  {stat.passes}/{stat.graded_runs} runs passed"
+    head = f"    {label} {safe(stat.category, 20):<7} {safe(stat.id)}  {stat.passes}/{stat.graded_runs} runs passed"
     if stat.errors:
         head += f", {stat.errors} errored"
     lines = [head]

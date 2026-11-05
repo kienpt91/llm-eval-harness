@@ -75,7 +75,10 @@ def collapse_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
+def longest_backtick_run(text: str) -> int:
+    return max((len(run) for run in re.findall(r"`+", text)), default=0)
+
+
 def fence_for(text: str) -> str:
     """A Markdown code fence longer than any run of backticks in ``text``."""
-    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
-    return "`" * max(3, longest + 1)
+    return "`" * max(3, longest_backtick_run(text) + 1)
