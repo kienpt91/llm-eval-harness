@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from llm_eval_harness.domain.shapes import find_pii, find_secrets, redact
 from support import keys
+from support.scaling import assert_scales_linearly
 
 
 def pem_with_body() -> str:
@@ -87,27 +86,26 @@ def test_a_jwt_with_a_long_payload_is_found() -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
-    [
-        ("eyJ-" * 250_000),
-        ("sk-" * 300_000),
-        ("ghp_" + "a" * 40 + "-") * 20_000,
-        ("-" * 5 + "BEGIN " + "PRIVATE " + "KEY" + "-" * 5) * 40_000,
-        ("x-ghp_" * 160_000),
-    ],
+    "unit",
+    ["eyJ-", "sk-", "ghp_" + "a" * 40 + "-", "-" * 5 + "BEGIN " + "PRIVATE " + "KEY" + "-" * 5, "x-ghp_"],
     ids=["jwt-dashes", "sk", "ghp-dashes", "pem-headers", "ghp-glue"],
 )
-def test_relaxed_boundaries_and_tails_stay_linear_on_hostile_megabytes(text: str) -> None:
-    started = time.monotonic()
-    find_secrets(text)
-    redact(text)
-    assert time.monotonic() - started < 20
+def test_relaxed_boundaries_and_tails_scale_linearly_on_hostile_text(unit: str) -> None:
+    def scan(repeats: int) -> None:
+        text = unit * repeats
+        find_secrets(text)
+        redact(text)
+
+    assert_scales_linearly(scan, 2_000)
 
 
-def test_non_ascii_megabytes_are_normalised_in_linear_time() -> None:
-    started = time.monotonic()
-    find_secrets("é" * 400_000 + keys.github_token() + "\u200b" * 400_000)
-    assert time.monotonic() - started < 15
+def test_non_ascii_text_is_normalised_in_linear_time() -> None:
+    token = keys.github_token()
+
+    def scan(n: int) -> None:
+        find_secrets("é" * n + token + "\u200b" * n)
+
+    assert_scales_linearly(scan, 20_000)
 
 
 def test_spans_map_back_to_the_original_text() -> None:

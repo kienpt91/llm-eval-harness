@@ -4,6 +4,7 @@ import pytest
 
 from llm_eval_harness.domain.text import collapse_whitespace, fence_for, fold, one_line, sanitize, truncate
 from support.prng import HOSTILE, Prng
+from support.scaling import assert_scales_linearly
 
 
 @pytest.mark.parametrize(
@@ -60,14 +61,13 @@ def test_property_sanitised_text_has_no_control_or_bidi_characters() -> None:
         assert "\x1b" not in out.replace("\\x1b", ""), seed
 
 
-def test_sanitize_is_linear_on_hostile_input() -> None:
-    import time
+def test_sanitize_scales_linearly_on_hostile_input() -> None:
+    def clean(n: int) -> None:
+        sanitize("\x1b[" * n)
+        sanitize("\x1b]" + "a" * n)
+        sanitize("\x1bP" + "b" * n)
 
-    started = time.monotonic()
-    sanitize("\x1b[" * 200_000)
-    sanitize("\x1b]" + "a" * 500_000)
-    sanitize("\x1bP" + "b" * 500_000)
-    assert time.monotonic() - started < 5
+    assert_scales_linearly(clean, 10_000)
 
 
 def test_fold_defeats_cheap_obfuscation() -> None:

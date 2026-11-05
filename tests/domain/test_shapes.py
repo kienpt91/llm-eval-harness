@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from llm_eval_harness.domain.grading.regexsafe import compiled
@@ -14,6 +12,7 @@ from llm_eval_harness.domain.shapes import (
     redact,
 )
 from support import keys
+from support.scaling import assert_scales_linearly
 
 
 @pytest.mark.parametrize(("kind", "secret"), sorted(keys.all_secrets().items()))
@@ -92,29 +91,20 @@ def test_redact_handles_overlapping_matches_and_custom_patterns() -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
-    [
-        "a" * 1_000_000,
-        "eyJ" * 300_000,
-        "sk-" * 300_000,
-        "ghp_" * 250_000,
-        "a://" * 250_000,
-        "Bearer " * 150_000,
-        "x@" * 400_000,
-        "1 " * 500_000,
-        ("api_key" + " " * 40) * 20_000,
-        "-----BEGIN " * 90_000,
-        "0x" * 400_000,
-        ("a." * 400_000),
-    ],
+    "unit",
+    ["a", "eyJ", "sk-", "ghp_", "a://", "Bearer ", "x@", "1 ", "api_key" + " " * 40, "-----" + "BEGIN ", "0x", "a."],
     ids=["a", "jwt", "sk", "ghp", "url", "bearer", "email", "digits", "assign", "pem", "hex", "dots"],
 )
-def test_scanning_hostile_megabytes_takes_linear_time(text: str) -> None:
-    started = time.monotonic()
-    find_secrets(text)
-    find_pii(text)
-    redact(text)
-    assert time.monotonic() - started < 15
+def test_scanning_hostile_text_scales_linearly(unit: str) -> None:
+    """Twelve adversarial shapes: four times the text may cost about four times the CPU, never sixteen times."""
+
+    def scan(repeats: int) -> None:
+        text = unit * repeats
+        find_secrets(text)
+        find_pii(text)
+        redact(text)
+
+    assert_scales_linearly(scan, 4_000)
 
 
 def test_pii_shapes() -> None:
