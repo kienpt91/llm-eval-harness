@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refuses a release unless the tag names the version in the manifest (package.json or Cargo.toml) and the tagged
+# Refuses a release unless the tag names the version in pyproject.toml and the tagged
 # commit is in the history of the default branch. Run it in a checkout that has every branch and the tag.
 # usage: check-release-tag.sh TAG
 #   DEFAULT_BRANCH    name of the default branch (default: main)

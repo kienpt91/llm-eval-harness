@@ -50,10 +50,20 @@ def main(argv: list[str]) -> int:
         return 2
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=UTC)
-    pins = parse(Path(__file__).resolve().parent.parent.joinpath("requirements-dev.txt").read_text())
+    root = Path(__file__).resolve().parent.parent
+    pins = parse(root.joinpath("requirements-dev.txt").read_text())
     if not pins:
         print("requirements-dev.txt pins nothing", file=sys.stderr)
         return 2
+    declared = {
+        tuple(line.strip().split("==", 1))
+        for line in root.joinpath("requirements-dev.in").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    normalised = {(name.lower().replace("_", "-"), version) for name, version in pins}
+    if {(n.lower().replace("_", "-"), v) for n, v in declared} != normalised:
+        print("requirements-dev.in and requirements-dev.txt disagree: run scripts/lock-dev.py", file=sys.stderr)
+        return 1
     too_new: list[str] = []
     files_checked = 0
     for (name, version), digests in sorted(pins.items()):

@@ -31,23 +31,27 @@ check() { (cd "$1" && sh "$scripts/check-release-tag.sh" "$2"); }
 notes() { (cd "$1" && sh "$scripts/release-notes.sh" "$2"); }
 version() { (cd "$1" && sh "$scripts/manifest-version.sh"); }
 
-# package.json: the version at the top level counts, a nested "version" does not
+# pyproject.toml: the [project] version counts; tool tables and dependency tables with a version key do not
 newrepo
-printf '{\n  "name": "probe",\n  "version": "1.2.3",\n  "dependencies": {\n    "x": {\n      "version": "9.9.9"\n    }\n  }\n}\n' > "$r/package.json"
+printf '[build-system]\nrequires = ["setuptools==1.0"]\nversion = "9.9.9"\n\n[project]\nname = "probe"\nversion = "1.2.3"\ndependencies = []\n\n[tool.other]\nversion = "7.7.7"\n' > "$r/pyproject.toml"
 commit "$r" "Add the package"
 publish_main "$r"
 git -C "$r" tag -a -m annotated v1.2.3
 git -C "$r" tag v1.2.4
-expect_ok "reads the npm version" test "$(version "$r")" = "1.2.3"
+git -C "$r" tag v9.9.9
+git -C "$r" tag v7.7.7
+expect_ok "reads the project version" test "$(version "$r")" = "1.2.3"
 expect_ok "accepts the (annotated) tag that names the version" check "$r" v1.2.3
 expect_fail "refuses a tag that names another version" check "$r" v1.2.4
+expect_fail "ignores the version key of the build-system table" check "$r" v9.9.9
+expect_fail "ignores the version key of a tool table" check "$r" v7.7.7
 expect_fail "refuses a tag without the v prefix" check "$r" 1.2.3
 expect_fail "refuses a tag that is not a version" check "$r" vnext
 expect_fail "refuses a tag that does not exist" check "$r" v1.2.3-missing
 
 # the tag has to be in the history of the default branch
 git -C "$r" checkout -q -b side
-printf '{\n  "name": "probe",\n  "version": "1.2.3-side"\n}\n' > "$r/package.json"
+printf '[project]\nname = "probe"\nversion = "1.2.3-side"\n' > "$r/pyproject.toml"
 commit "$r" "Name the side version"
 git -C "$r" tag v1.2.3-side
 expect_fail "refuses a tag that is not in the default branch" check "$r" v1.2.3-side
@@ -56,26 +60,13 @@ expect_ok "compares with the ref of the environment" env RELEASE_BASE_REF=refs/h
 git -C "$r" update-ref refs/remotes/origin/main refs/heads/side
 expect_ok "accepts it once the default branch contains the tag" check "$r" v1.2.3-side
 
-# Cargo.toml: workspace version and single-crate version; dependency versions do not count
+# a project table whose version is a pre-release, and a version with a single quote style
 newrepo
-printf '[workspace]\nmembers = ["a"]\n\n[workspace.dependencies]\nx = { version = "7.7.7" }\n\n[workspace.package]\nversion = "0.4.0"\nedition = "2021"\n\n[dependencies.y]\nversion = "8.8.8"\n' > "$r/Cargo.toml"
-commit "$r" "Add the workspace"
+printf '[project]\nname = "probe"\nversion = "0.2.0-rc.1"\n' > "$r/pyproject.toml"
+commit "$r" "Add a pre-release"
 publish_main "$r"
-git -C "$r" tag v0.4.0
-git -C "$r" tag v7.7.7
-git -C "$r" tag v8.8.8
-expect_ok "reads the workspace version" test "$(version "$r")" = "0.4.0"
-expect_ok "accepts the tag of the workspace version" check "$r" v0.4.0
-expect_fail "ignores the version of a workspace dependency" check "$r" v7.7.7
-expect_fail "ignores the version of a dependency table" check "$r" v8.8.8
-
-newrepo
-printf '[package]\nname = "one"\nversion = "2.0.1"\n\n[dependencies]\nz = { version = "3.0.0" }\n' > "$r/Cargo.toml"
-commit "$r" "Add the crate"
-publish_main "$r"
-git -C "$r" tag v2.0.1
-expect_ok "reads the single crate version" test "$(version "$r")" = "2.0.1"
-expect_ok "accepts the tag of the single crate" check "$r" v2.0.1
+git -C "$r" tag v0.2.0-rc.1
+expect_ok "accepts a pre-release tag" check "$r" v0.2.0-rc.1
 
 # no manifest, no version
 newrepo
@@ -85,11 +76,17 @@ publish_main "$r"
 git -C "$r" tag v1.0.0
 expect_fail "refuses without a manifest" check "$r" v1.0.0
 newrepo
-printf '{\n  "name": "probe"\n}\n' > "$r/package.json"
+printf '[project]\nname = "probe"\n' > "$r/pyproject.toml"
 commit "$r" "Add a package without a version"
 publish_main "$r"
 git -C "$r" tag v1.0.0
 expect_fail "refuses a manifest without a version" check "$r" v1.0.0
+newrepo
+printf '[tool.x]\nversion = "1.0.0"\n' > "$r/pyproject.toml"
+commit "$r" "Add a manifest whose only version is in a tool table"
+publish_main "$r"
+git -C "$r" tag v1.0.0
+expect_fail "refuses a manifest without a project version" check "$r" v1.0.0
 
 # release notes: subjects since the previous tag, no merge commits, nothing from before it
 newrepo
