@@ -1,0 +1,4 @@
+{
+  "dataset": "cases.jsonl",
+  "provider": { "type": "command", "argv": ["python3", "pipeline.py"] }
+}
