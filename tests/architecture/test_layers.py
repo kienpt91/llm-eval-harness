@@ -89,6 +89,43 @@ BAD: list[tuple[str, str, str]] = [
     ("composition/x.py", "from os import *\n", "wildcard import"),
     ("composition/x.py", "import importlib\n", "can execute or load arbitrary code"),
     ("__main__.py", "x = 1\nexec('1')\n", "call to exec()"),
+    # evasions of the first rules
+    ("infrastructure/x.py", "import builtins\nbuiltins.eval('1')\n", "builtins"),
+    ("composition/x.py", "ev = eval\nev('1')\n", "reference to eval"),
+    ("composition/x.py", "x = [exec, compile]\n", "reference to exec"),
+    ("infrastructure/x.py", "f = __import__\n", "reference to __import__"),
+    ("infrastructure/x.py", "import os\ngetattr(os, 'sys' + 'tem')('x')\n", "getattr with a computed name"),
+    ("domain/x.py", "name = 'a'\nsetattr(object(), name, 1)\n", "setattr with a computed name"),
+    ("infrastructure/x.py", "import os\ngetattr(os, 'system')\n", "forbidden attribute"),
+    ("infrastructure/x.py", "x.__builtins__\n", "forbidden attribute"),
+    ("infrastructure/x.py", "().__class__.__bases__[0].__subclasses__()\n", "forbidden attribute"),
+    ("infrastructure/x.py", "def f(): pass\nf.__globals__\n", "forbidden attribute"),
+    ("infrastructure/x.py", "import os as o\no.environ\n", "only the composition layer reads the environment"),
+    ("infrastructure/x.py", "from os import environ\n", "only the composition layer reads the environment"),
+    ("infrastructure/x.py", "from os import getenv as g\n", "only the composition layer reads the environment"),
+    ("infrastructure/x.py", "import os as o\no.putenv('A', 'b')\n", "only the composition layer reads the environment"),
+    (
+        "infrastructure/x.py",
+        "import os\nos.execv('/bin/sh', ['sh'])\n",
+        "may only be used by infrastructure/process.py",
+    ),
+    ("infrastructure/x.py", "import os\nos.spawnl(0, 'a')\n", "may only be used by infrastructure/process.py"),
+    ("infrastructure/x.py", "import os\nos.fork()\n", "may only be used by infrastructure/process.py"),
+    ("infrastructure/x.py", "from os import posix_spawn\n", "may only be used by infrastructure/process.py"),
+    ("infrastructure/x.py", "import os as o\no.killpg(1, 9)\n", "may only be used by infrastructure/process.py"),
+    ("infrastructure/process.py", "from os import system\n", "runs a shell"),
+    ("infrastructure/process.py", "import os as o\no.popen('x')\n", "runs a shell"),
+    ("infrastructure/x.py", "import posix\n", "can execute or load arbitrary code"),
+    ("infrastructure/x.py", "import pkgutil\n", "can execute or load arbitrary code"),
+    ("composition/x.py", "import timeit\n", "can execute or load arbitrary code"),
+    ("composition/x.py", "import cProfile\n", "can execute or load arbitrary code"),
+    ("composition/x.py", "import pdb\n", "can execute or load arbitrary code"),
+    ("composition/x.py", "import gc\n", "can execute or load arbitrary code"),
+    ("composition/x.py", "import inspect\n", "can execute or load arbitrary code"),
+    ("infrastructure/x.py", "import ctypes\n", "can execute or load arbitrary code"),
+    ("domain/x.py", "import types\n", "domain must be pure"),
+    ("infrastructure/x.py", "import os\nfn = os.__dict__['sys' + 'tem']\n", "forbidden attribute"),
+    ("infrastructure/x.py", "import sys\nsys.modules['os'].system('x')\n", "forbidden attribute"),
 ]
 
 
@@ -113,6 +150,14 @@ GOOD: list[tuple[str, str]] = [
     ("infrastructure/x.py", "import os\nimport time\nimport random\nfrom llm_eval_harness.application import ports\n"),
     ("composition/x.py", "import os\nx = os.environ.get('A')\nfrom llm_eval_harness.infrastructure import fs\n"),
     ("__main__.py", "from llm_eval_harness.composition.main import run\n"),
+    (
+        "infrastructure/process.py",
+        "import os\nimport signal\nos.killpg(1, signal.SIGKILL)\nw = getattr(os, 'waitid', None)\n",
+    ),
+    ("infrastructure/process.py", "import os as o\no.waitid(0, 1, 2)\n"),
+    ("composition/x.py", "import os as o\nfrom os import environ\no.environ.get('A')\n"),
+    ("infrastructure/x.py", "import os\nos.path.join('a', 'b')\nos.replace('a', 'b')\nos.fdopen(1)\n"),
+    ("domain/x.py", "x = getattr(obj, 'literal_name', None)\n"),
 ]
 
 

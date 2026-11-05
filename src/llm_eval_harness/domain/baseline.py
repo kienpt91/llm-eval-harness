@@ -118,8 +118,8 @@ def parse_baseline(value: JsonValue, source: str) -> Snapshot:
         )
         if stat.category not in CATEGORIES:
             raise r.fail(f"{path}.category", f"must be one of {', '.join(CATEGORIES)}")
-        for name in ("graded_runs", "errors"):
-            if getattr(stat, name) > MAX_REPEAT:
+        for name, count in (("graded_runs", stat.graded_runs), ("errors", stat.errors)):
+            if count > MAX_REPEAT:
                 raise r.fail(f"{path}.{name}", f"is more than {MAX_REPEAT}, the most runs one case can have")
         if min(stat.passes, stat.graded_runs, stat.errors) < 0 or stat.passes > stat.graded_runs:
             raise r.fail(path, "has inconsistent run counts")

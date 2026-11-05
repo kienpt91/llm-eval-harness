@@ -280,9 +280,13 @@ def _case(r: Reader, value: JsonValue, path: str) -> CaseDoc:
         errors=sum(1 for run in runs if run.status == ERROR),
         mean_score=stat.mean_score,
     )
-    for name in ("graded_runs", "passes", "errors"):
-        if getattr(stat, name) != getattr(real, name):
-            raise r.fail(f"{path}.{name}", f"is {getattr(stat, name)} but its runs show {getattr(real, name)}")
+    for name, stored, actual in (
+        ("graded_runs", stat.graded_runs, real.graded_runs),
+        ("passes", stat.passes, real.passes),
+        ("errors", stat.errors, real.errors),
+    ):
+        if stored != actual:
+            raise r.fail(f"{path}.{name}", f"is {stored} but its runs show {actual}")
     status = r.req_s(c, "status", path)
     if status != real.status:
         raise r.fail(f"{path}.status", f"is {status!r} but its runs show {real.status!r}")

@@ -52,7 +52,6 @@ PURE_STDLIB = frozenset(
         "re",
         "statistics",
         "string",
-        "types",
         "typing",
         "unicodedata",
     }
@@ -75,12 +74,34 @@ NETWORK_MODULES = frozenset(
         "xmlrpc",
     }
 )
-UNSAFE_MODULES = frozenset({"pickle", "marshal", "shelve", "ctypes", "importlib", "code", "codeop", "runpy", "imp"})
+UNSAFE_MODULES = frozenset(
+    {
+        "pickle", "marshal", "shelve", "ctypes", "importlib", "code", "codeop", "runpy", "imp", "builtins", "posix", "nt",
+        "pkgutil", "timeit", "cProfile", "profile", "pdb", "trace", "gc", "inspect",
+    }
+)  # fmt: skip
 
 PROCESS_FILE = "infrastructure/process.py"
 NETWORK_FILE = "infrastructure/providers/http.py"
 
 FORBIDDEN_CALLS = frozenset({"eval", "exec", "compile", "__import__"})
+# attributes that reach the interpreter's internals or other modules behind the import rules' back
+FORBIDDEN_ATTRS = frozenset(
+    {
+        "__builtins__", "__globals__", "__code__", "__subclasses__", "__mro__", "__bases__", "__loader__", "__import__",
+        "__dict__", "f_globals", "f_locals", "f_builtins", "gi_frame", "cr_frame", "modules",
+    }
+)  # fmt: skip
+REFLECTION = frozenset({"getattr", "setattr", "delattr"})
+ENV_NAMES = frozenset({"environ", "environb", "getenv", "getenvb", "putenv", "unsetenv"})
+SHELL_NAMES = frozenset({"system", "popen", "startfile"})
+PROCESS_ONLY_NAMES = frozenset(
+    {
+        "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp", "execvpe", "spawnl", "spawnle", "spawnlp",
+        "spawnlpe", "spawnv", "spawnve", "spawnvp", "spawnvpe", "fork", "forkpty", "posix_spawn", "posix_spawnp", "kill",
+        "killpg", "waitid", "waitpid", "wait", "wait3", "wait4", "setsid", "setpgid",
+    }
+)  # fmt: skip
 # builtins that touch the outside world: never in the pure layers
 IO_BUILTINS = frozenset({"open", "print", "input", "breakpoint"})
 
@@ -165,39 +186,72 @@ def violations(relpath: str, source: str) -> list[str]:
             found.append(f"{where}: {imp.module} may only be imported by {NETWORK_FILE}")
         if _stdlib_ok(imp.module, UNSAFE_MODULES):
             found.append(f"{where}: {imp.module} can execute or load arbitrary code")
+    found.extend(_syntax_violations(relpath, layer, tree))
+    return found
+
+
+def _is_literal_str(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+
+def _syntax_violations(relpath: str, layer: str, tree: ast.AST) -> list[str]:
+    found: list[str] = []
+    os_names = {"os"}  # `import os`, `import os as o`
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
-            found.append(f"{relpath}:{node.lineno}: wildcard import")
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in FORBIDDEN_CALLS:
+        if isinstance(node, ast.Import):
+            os_names.update(alias.asname or alias.name for alias in node.names if alias.name == "os")
+
+    def process_only(name: str, where: str) -> None:
+        if name in SHELL_NAMES:
+            found.append(f"{where}: os.{name} runs a shell")
+        elif name in PROCESS_ONLY_NAMES and relpath != PROCESS_FILE:
+            found.append(f"{where}: os.{name} may only be used by {PROCESS_FILE}")
+        elif name in ENV_NAMES and layer != "composition":
+            found.append(f"{where}: only the composition layer reads the environment (os.{name})")
+
+    for node in ast.walk(tree):
+        where = f"{relpath}:{getattr(node, 'lineno', 0)}"
+        if isinstance(node, ast.ImportFrom):
+            if any(a.name == "*" for a in node.names):
+                found.append(f"{where}: wildcard import")
+            if node.level == 0 and node.module == "os":
+                for alias in node.names:
+                    process_only(alias.name, where)
+        elif isinstance(node, ast.Name):
+            if node.id in FORBIDDEN_CALLS and isinstance(node.ctx, ast.Load):
+                is_call = False
+                for parent in ast.walk(tree):
+                    if isinstance(parent, ast.Call) and parent.func is node:
+                        is_call = True
+                        break
                 found.append(
-                    f"{relpath}:{node.lineno}: call to {node.func.id}() (model output and datasets are never executed)"
+                    f"{where}: call to {node.id}() (model output and datasets are never executed)"
+                    if is_call
+                    else f"{where}: reference to {node.id} (an alias would hide the call)"
                 )
-            if node.func.id in IO_BUILTINS and layer in ("domain", "application"):
-                found.append(f"{relpath}:{node.lineno}: {node.func.id}() in the {layer} layer")
-        if isinstance(node, ast.Call):
+            if node.id in IO_BUILTINS and layer in ("domain", "application") and isinstance(node.ctx, ast.Load):
+                found.append(f"{where}: {node.id}() in the {layer} layer")
+            if node.id in ("__builtins__", "globals", "vars", "locals") and layer in ("domain", "application"):
+                found.append(f"{where}: reflection ({node.id}) in the {layer} layer")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in FORBIDDEN_ATTRS:
+                found.append(f"{where}: forbidden attribute .{node.attr}: it reaches the interpreter's internals")
+            if isinstance(node.value, ast.Name) and node.value.id in os_names:
+                process_only(node.attr, where)
+        elif isinstance(node, ast.Call):
             for kw in node.keywords:
                 if kw.arg == "shell" and not (isinstance(kw.value, ast.Constant) and kw.value.value is False):
-                    found.append(f"{relpath}:{node.lineno}: shell= must be the literal False")
-            if (
-                isinstance(node.func, ast.Attribute)
-                and node.func.attr in ("system", "popen")
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "os"
-            ):
-                found.append(f"{relpath}:{node.lineno}: os.{node.func.attr} runs a shell")
-        if (
-            isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "os"
-            and node.attr in ("environ", "getenv", "environb")
-        ):
-            if layer != "composition":
-                found.append(f"{relpath}:{node.lineno}: only the composition layer reads the environment")
-        if (
-            isinstance(node, ast.Name)
-            and node.id in ("__builtins__", "globals", "vars")
-            and layer in ("domain", "application")
-        ):
-            found.append(f"{relpath}:{node.lineno}: reflection ({node.id}) in the {layer} layer")
+                    found.append(f"{where}: shell= must be the literal False")
+            if isinstance(node.func, ast.Name) and node.func.id in REFLECTION:
+                name_arg = node.args[1] if len(node.args) > 1 else None
+                if name_arg is None or not _is_literal_str(name_arg):
+                    found.append(f"{where}: {node.func.id} with a computed name")
+                else:
+                    assert isinstance(name_arg, ast.Constant)
+                    literal = str(name_arg.value)
+                    banned = FORBIDDEN_ATTRS | SHELL_NAMES | ENV_NAMES
+                    if relpath != PROCESS_FILE:
+                        banned |= PROCESS_ONLY_NAMES
+                    if literal in banned:
+                        found.append(f"{where}: forbidden attribute {literal!r} through {node.func.id}")
     return found
