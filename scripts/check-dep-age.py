@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Dependency age policy: every file pinned in requirements-dev.txt must be at least seven days old on PyPI.
 
-    python scripts/check-dep-age.py [CUTOFF_ISO_DATE]
+    python scripts/check-dep-age.py [CUTOFF_ISO_DATE] [--index URL] [--lock FILE] [--input FILE]
 
-Without an argument the cutoff is seven days before now. For each `name==version` and each `--hash=sha256:...` it
-asks the PyPI JSON API for the release files, finds the file with that hash and compares its upload time with the
-cutoff. Exit status: 0 all old enough, 1 a file is too new or unknown to PyPI, 2 usage or network error.
-Standard library only; needs the network (it is the one script that does).
+Without a cutoff it is seven days before now. For each ``name==version`` of the lock and each
+``--hash=sha256:...`` it asks the index's JSON API for the files of that exact release, finds the file with that
+hash and compares its upload time with the cutoff. It also fails when
+
+* the lock and its input (``requirements-dev.in``) do not pin exactly the same packages and versions,
+* a pin has no hash,
+* a hash is not a file of that release, or the file was yanked.
+
+Exit status: 0 all old enough, 1 a file is too new, unknown or yanked (or lock and input disagree), 2 usage or network
+error (also: the index has no such release, so nothing could be checked). Standard library only; needs the network
+(it is the one script that does). ``--index`` exists for the tests: it must be https, or http on loopback.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -18,7 +26,10 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_INDEX = "https://pypi.org"
 PIN = re.compile(r"^(?P<name>[A-Za-z0-9._-]+)==(?P<version>[A-Za-z0-9.!+_-]+)\s*\\?$")
 HASH = re.compile(r"--hash=sha256:(?P<digest>[0-9a-f]{64})")
 
@@ -42,27 +53,50 @@ def parse(text: str) -> dict[tuple[str, str], list[str]]:
     return pins
 
 
+def normalise(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def index_is_acceptable(index: str) -> bool:
+    parts = urlsplit(index)
+    host = parts.hostname or ""
+    return parts.scheme == "https" or (parts.scheme == "http" and host in ("127.0.0.1", "localhost", "::1"))
+
+
 def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="check-dep-age.py", add_help=True)
+    parser.add_argument("cutoff", nargs="?")
+    parser.add_argument("--index", default=DEFAULT_INDEX)
+    parser.add_argument("--lock", default=str(ROOT / "requirements-dev.txt"))
+    parser.add_argument("--input", default=str(ROOT / "requirements-dev.in"))
     try:
-        cutoff = datetime.fromisoformat(argv[1]) if len(argv) > 1 else datetime.now(UTC) - timedelta(days=7)
+        args = parser.parse_args(argv[1:])
+    except SystemExit as error:
+        return 2 if error.code else 0
+    try:
+        cutoff = datetime.fromisoformat(args.cutoff) if args.cutoff else datetime.now(UTC) - timedelta(days=7)
     except ValueError:
         print("invalid cutoff date", file=sys.stderr)
         return 2
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=UTC)
-    root = Path(__file__).resolve().parent.parent
-    pins = parse(root.joinpath("requirements-dev.txt").read_text())
+    if not index_is_acceptable(args.index):
+        print("the index must be an https URL (or http on loopback)", file=sys.stderr)
+        return 2
+    pins = parse(Path(args.lock).read_text())
     if not pins:
-        print("requirements-dev.txt pins nothing", file=sys.stderr)
+        print("the lock pins nothing", file=sys.stderr)
         return 2
     declared = {
-        tuple(line.strip().split("==", 1))
-        for line in root.joinpath("requirements-dev.in").read_text().splitlines()
-        if line.strip() and not line.startswith("#")
+        (normalise(name), version)
+        for name, version in (
+            line.strip().split("==", 1)
+            for line in Path(args.input).read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        )
     }
-    normalised = {(name.lower().replace("_", "-"), version) for name, version in pins}
-    if {(n.lower().replace("_", "-"), v) for n, v in declared} != normalised:
-        print("requirements-dev.in and requirements-dev.txt disagree: run scripts/lock-dev.py", file=sys.stderr)
+    if declared != {(normalise(name), version) for name, version in pins}:
+        print("the input and the lock disagree: run scripts/lock-dev.py", file=sys.stderr)
         return 1
     too_new: list[str] = []
     files_checked = 0
@@ -71,18 +105,20 @@ def main(argv: list[str]) -> int:
             too_new.append(f"{name}=={version}: no hash pinned")
             continue
         try:
-            with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=30) as response:
+            with urllib.request.urlopen(f"{args.index.rstrip('/')}/pypi/{name}/{version}/json", timeout=30) as response:
                 release = json.load(response)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-            print(f"{name}=={version}: PyPI lookup failed: {error}", file=sys.stderr)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as error:
+            print(f"{name}=={version}: lookup failed: {error}", file=sys.stderr)
             return 2
         by_hash = {f["digests"]["sha256"]: f for f in release["urls"]}
         for digest in digests:
             found = by_hash.get(digest)
             if found is None:
-                too_new.append(f"{name}=={version}: hash {digest[:12]} is not a file of this release on PyPI")
+                too_new.append(f"{name}=={version}: hash {digest[:12]} is not a file of this release on the index")
                 continue
             files_checked += 1
+            if found.get("yanked"):
+                too_new.append(f"{found['filename']}: yanked")
             uploaded = datetime.fromisoformat(found["upload_time_iso_8601"].replace("Z", "+00:00"))
             if uploaded > cutoff:
                 too_new.append(f"{found['filename']}: uploaded {uploaded.isoformat()}")
