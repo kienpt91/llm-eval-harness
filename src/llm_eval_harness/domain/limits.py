@@ -25,3 +25,6 @@ MAX_MESSAGE_CHARS = 2000
 """Longest message (error text, grader detail) kept in a report."""
 STORED_OUTPUT_CHARS = 20_000
 """Longest model output stored in a report; the grading itself always sees the whole output."""
+MAX_REGEX_INPUT_CHARS = 32 * 1024
+"""Longest text a user-supplied regular expression is run on. Python's ``re`` cannot be interrupted, and even a
+screened pattern can be quadratic on adversarial text, so longer text FAILS the grader instead of being scanned."""
