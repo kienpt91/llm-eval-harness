@@ -13,7 +13,7 @@ setuptools==84.2.1
 ast-serialize==0.13.1
 iniconfig==2.3.1
 librt==0.16.0
-mypy-extensions==1.1.0
+mypy-extensions==1.2.0
 packaging==26.3
 pathspec==1.1.1
 pluggy==1.7.0
